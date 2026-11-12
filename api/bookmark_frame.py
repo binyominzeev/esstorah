@@ -17,7 +17,7 @@ BOOKMARK_SCRIPT = r"""<script>
       button.setAttribute('aria-pressed', String(saved));
     }
   }
-  function openBookmark(kind, text) {
+  function openBookmark(kind, text, focus) {
     let question;
     if (kind === 'question') {
       question = [...document.querySelectorAll('.l2')].find(node =>
@@ -28,6 +28,15 @@ BOOKMARK_SCRIPT = r"""<script>
     }
     if (!question) return;
     const folder = question.closest('.l1');
+    if (focus) {
+      document.querySelectorAll('.l2').forEach(node => {
+        if (node !== question) node.style.display = 'none';
+      });
+      document.querySelectorAll('.l1').forEach(node => {
+        if (!node.contains(question)) node.style.display = 'none';
+      });
+      document.querySelectorAll('.bar').forEach(node => node.style.display = 'none');
+    }
     if (folder instanceof HTMLDetailsElement) folder.open = true;
     question.open = true;
     question.scrollIntoView({block:'center', behavior:'smooth'});
@@ -61,9 +70,9 @@ BOOKMARK_SCRIPT = r"""<script>
       return;
     }
     if (event.data?.type === 'esstorah-bookmark-open') {
-      const {kind, text} = event.data;
+      const {kind, text, focus} = event.data;
       if ((kind === 'question' || kind === 'answer') && typeof text === 'string' && text.trim()) {
-        openBookmark(kind, text);
+        openBookmark(kind, text, focus === true);
       }
       return;
     }

@@ -159,6 +159,7 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
                                     type: "esstorah-bookmark-open",
                                     kind: item.kind,
                                     text: item.text,
+                                    focus: true,
                                   }, "*");
                                 }}
                               />
