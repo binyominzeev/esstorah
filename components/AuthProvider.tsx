@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 const API = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 const ACCESS = "esstorah.accessToken";
 const REFRESH = "esstorah.refreshToken";
+const USER_NAME = "esstorah.userName";
 const VERIFIER = "esstorah.pkceVerifier";
 const RETURN_PATH = "esstorah.returnPath";
 
@@ -31,11 +32,16 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function decode(token: string): { exp?: number; name?: string; preferred_username?: string; email?: string } {
+function decode(token: string): { exp?: number; name?: string; preferred_username?: string; email?: string; nickname?: string } {
   const payload = token.split(".")[1];
   if (!payload) throw new Error("Érvénytelen azonosító token.");
   const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
   return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))));
+}
+
+function displayName(token: string): string | undefined {
+  const claims = decode(token);
+  return claims.name || claims.preferred_username || claims.email || claims.nickname;
 }
 
 function base64url(bytes: Uint8Array) {
@@ -75,9 +81,12 @@ async function initialize(): Promise<Tokens | null> {
     sessionStorage.removeItem(VERIFIER);
     const path = sessionStorage.getItem(RETURN_PATH);
     sessionStorage.removeItem(RETURN_PATH);
-    localStorage.setItem(ACCESS, tokens.access_token);
+    const userName = (tokens.id_token && displayName(tokens.id_token)) || displayName(tokens.access_token);
+    if (userName) localStorage.setItem(USER_NAME, userName);
+    else localStorage.removeItem(USER_NAME);
     if (tokens.refresh_token) localStorage.setItem(REFRESH, tokens.refresh_token);
     else localStorage.removeItem(REFRESH);
+    localStorage.setItem(ACCESS, tokens.access_token);
     location.replace(path?.startsWith("/") && !path.startsWith("//") ? path : "/");
     return null;
   }
@@ -103,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (timer.current) clearTimeout(timer.current);
     localStorage.removeItem(ACCESS);
     localStorage.removeItem(REFRESH);
+    localStorage.removeItem(USER_NAME);
     setAuthenticated(false);
     setName("");
     setBookmarks([]);
@@ -113,10 +123,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!claims.exp) throw new Error("A hozzáférési tokennek nincs lejárata.");
     access.current = tokens.access_token;
     refresh.current = tokens.refresh_token ?? refresh.current;
-    localStorage.setItem(ACCESS, access.current);
+    const userName = (tokens.id_token && displayName(tokens.id_token)) ||
+      displayName(tokens.access_token) || localStorage.getItem(USER_NAME);
+    if (userName) localStorage.setItem(USER_NAME, userName);
     if (refresh.current) localStorage.setItem(REFRESH, refresh.current);
-    const identity = tokens.id_token ? decode(tokens.id_token) : claims;
-    setName(identity.name || identity.preferred_username || identity.email || "felhasználó");
+    localStorage.setItem(ACCESS, access.current);
+    setName(userName || "felhasználó");
     setAuthenticated(true);
     return claims.exp;
   }, []);
