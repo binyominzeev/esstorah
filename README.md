@@ -64,10 +64,11 @@ smaller (~54 pages instead of thousands) — small text edits no longer touch a 
 
 ## Serve statically with nginx
 
-No Node server or PM2 is needed in production: the build is fully static, so nginx serves
-`out/` directly and every feature works — including chapter/verse deep links like
+The frontend needs no Node server or PM2 in production: nginx serves the fully static
+`out/` directly, including chapter/verse deep links like
 `/Softim/17/14`, which nginx rewrites to the single `Softim.html` page while client-side
-JS does the scrolling and verse highlighting. (`next start` is *not* an option here: with
+JS does the scrolling and verse highlighting. AI maps, login and bookmarks additionally
+need the FastAPI backend below. (`next start` is *not* an option here: with
 `output: 'export'` there is no Node runtime, trying it fails with `"next start" does not
 work with "output: export" configuration`.)
 
@@ -94,8 +95,8 @@ The important parts of the config (see `deploy/nginx.conf.sample`):
 - `try_files $uri $uri.html $uri/ =404;` — extensionless parasha URLs (`/Softim`)
 - long-lived cache headers for the content-hashed `/_next/static/` assets
 
-There is nothing to restart after a deploy: `npm run build` replaces the contents of
-`out/` and nginx serves the new files immediately.
+There is no frontend process to restart after a deploy: `npm run build` replaces the
+contents of `out/` and nginx serves the new files immediately.
 
 ## AI question-map backend (pm2)
 
@@ -127,6 +128,19 @@ git pull && git submodule update --init && pm2 restart mytorah-api   # after a c
 Notes: do not use `--reload` / pm2 `watch` (a restart kills running generation jobs; finished
 results stay on disk in `meforshim/out/` and the cached extraction step is not paid for again).
 
+For Pocket ID login, account registration and persistent per-user AI question/answer
+bookmarks, configure the API and Pocket ID client as described in
+[api/README.md](api/README.md#pocket-id-and-bookmarks). Logged-in readers can use
+the star next to a question or answer and browse their saved items by parasha
+under „Könyvjelzőim”.
+
+In Pocket ID, set the **Callback URL** to `https://esstorah.com/` if that is
+the frontend's canonical address. Set the API's `OIDC_REDIRECT_URI` to the
+exact same value, including the final `/`. The browser uses its current origin,
+so redirect `www.esstorah.com` to the canonical domain before login, or use a
+separately configured client and API for that origin. For local development,
+the callback is `http://localhost:3000/`.
+
 ## Deploy
 
 Two independent things need to reach the server:
@@ -151,7 +165,7 @@ Two independent things need to reach the server:
    ```
 
    nginx serves the `out/` folder directly (see `deploy/nginx.conf.sample`); there's no separate
-   upload step and no server restart — the new static files are live as soon as the build finishes.
+   frontend upload or restart. Restart the API when backend code or its environment changes.
 
 It is written together with ChatGPT:
 

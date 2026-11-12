@@ -1,3 +1,5 @@
 fastapi
 uvicorn
+httpx
+PyJWT[crypto]>=2.8,<3
 -r ../meforshim/requirements.txt

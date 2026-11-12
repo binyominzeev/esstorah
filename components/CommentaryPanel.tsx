@@ -5,6 +5,7 @@ import type { CommentaryEntry } from "@/lib/types";
 import QuestionMap from "./QuestionMap";
 
 export default function CommentaryPanel({
+  parasha,
   open,
   onClose,
   sefariaHref,
@@ -13,6 +14,7 @@ export default function CommentaryPanel({
   onMapDone,
   commentaries,
 }: {
+  parasha: string;
   open: boolean;
   onClose: () => void;
   sefariaHref?: string;
@@ -135,7 +137,7 @@ export default function CommentaryPanel({
           és megjelenik itt a Sefaria-link.
         </div>
       )}
-      {mapRef && <QuestionMap mapRef={mapRef} onDone={onMapDone} />}
+      {mapRef && <QuestionMap parasha={parasha} mapRef={mapRef} onDone={onMapDone} />}
       {commentaries.map((c) => (
         <div key={c.id} id={`commentary-${c.id}`} className="commentary" dangerouslySetInnerHTML={{ __html: c.html }} />
       ))}

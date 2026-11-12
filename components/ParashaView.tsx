@@ -225,6 +225,7 @@ export default function ParashaView({
         <BilingualTable rows={rows} />
       </div>
       <CommentaryPanel
+        parasha={slug}
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
         sefariaHref={sefariaHref}

@@ -6,6 +6,7 @@ import "./globals.css";
 import { getNavStructure } from "@/lib/content";
 import Sidebar from "@/components/Sidebar";
 import TopControls from "@/components/TopControls";
+import { AuthProvider } from "@/components/AuthProvider";
 
 const fontHebrew = Frank_Ruhl_Libre({
   subsets: ["hebrew", "latin"],
@@ -66,9 +67,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           src="https://www.googletagmanager.com/gtag/js?id=G-H8D9YRFC61"
           strategy="afterInteractive"
         />
-        <TopControls />
-        <Sidebar nav={nav} />
-        {children}
+        <AuthProvider>
+          <TopControls />
+          <Sidebar nav={nav} />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

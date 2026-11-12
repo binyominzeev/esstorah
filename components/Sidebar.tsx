@@ -4,13 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { NavBook } from "@/lib/types";
+import { useAuth } from "./AuthProvider";
 
 export default function Sidebar({ nav }: { nav: NavBook[] }) {
   const pathname = usePathname();
   const activeSlug = pathname.split("/").filter(Boolean)[0] ?? "";
+  const currentParasha = nav.some((book) => book.parashot.some((p) => p.slug === activeSlug));
   const [open, setOpen] = useState(false);
   const [openBooks, setOpenBooks] = useState<Set<string>>(new Set());
   const isFirstRender = useRef(true);
+  const { ready, authenticated, name, error, login, logout } = useAuth();
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -49,6 +52,14 @@ export default function Sidebar({ nav }: { nav: NavBook[] }) {
         <h2>
           <Link href="/">EssTorah</Link>
         </h2>
+        <div className="auth-controls">
+          {authenticated && <span>Üdv, {name}!</span>}
+          <button type="button" disabled={!ready} onClick={() => authenticated ? logout() : void login()}>
+            {authenticated ? "Kilépés" : "Belépés / regisztráció"}
+          </button>
+          {error && <p role="alert">{error}</p>}
+          <Link href={currentParasha ? `/bookmarks?parasha=${encodeURIComponent(activeSlug)}` : "/bookmarks"} onClick={() => setOpen(false)}>Könyvjelzőim</Link>
+        </div>
         <ul>
           {nav.map((book) => (
             <li key={book.name} className={openBooks.has(book.name) ? "open" : ""}>

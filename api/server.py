@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from auth_bookmarks import router as auth_bookmarks_router
 
 ROOT = Path(__file__).resolve().parent.parent
 MEFORSHIM = ROOT / "meforshim"
@@ -31,9 +32,15 @@ sys.path.insert(0, str(MEFORSHIM))
 import sefaria  # noqa: E402
 
 app = FastAPI(title="mytorah meforshim API", docs_url=None, redoc_url=None)
+app.include_router(auth_bookmarks_router, prefix="/api")
 if ALLOWED_ORIGINS:
     from fastapi.middleware.cors import CORSMiddleware
-    app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS.split(","), allow_methods=["GET", "POST"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.strip() for origin in ALLOWED_ORIGINS.split(",") if origin.strip()],
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 jobs: dict[str, dict] = {}
 started: list[float] = []
@@ -219,4 +226,9 @@ async def get_html(ref: str):
     page = load_html(dot) if dot not in jobs or jobs[dot]["state"] not in ("queued", "running") else None
     if page is None:
         raise HTTPException(404, "Még nincs kész")
-    return HTMLResponse(page.replace("</head>", THEME + "</head>", 1))
+    from bookmark_frame import BOOKMARK_SCRIPT
+    page = page.replace("</head>", THEME + "</head>", 1)
+    return HTMLResponse(
+        page.replace("</body>", BOOKMARK_SCRIPT + "</body>", 1),
+        headers={"Content-Security-Policy": "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox"},
+    )

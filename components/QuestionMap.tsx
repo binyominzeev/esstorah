@@ -1,13 +1,55 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "./AuthProvider";
 
 const API = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 type Status = { state: "none" | "queued" | "running" | "done" | "error"; stage?: string; progress?: number; error?: string };
 
-export default function QuestionMap({ mapRef, onDone }: { mapRef: string; onDone?: (ref: string) => void }) {
+let fontsPromise: Promise<string> | null = null;
+function frameStyles(): Promise<string> {
+  if (!fontsPromise) {
+    fontsPromise = (async () => {
+      const fonts: Promise<string>[] = [];
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules: CSSRuleList;
+        try {
+          rules = sheet.cssRules;
+        } catch {
+          continue;
+        }
+        for (const rule of Array.from(rules)) {
+          if (!(rule instanceof CSSFontFaceRule)) continue;
+          const css = rule.cssText;
+          const match = /url\(["']?([^"')]+)["']?\)/.exec(css);
+          if (!match) continue;
+          const url = new URL(match[1], sheet.href || document.baseURI).href;
+          fonts.push(fetch(url).then((response) => {
+            if (!response.ok) throw new Error(`Font download failed (${response.status}): ${url}`);
+            return response.blob();
+          }).then((blob) => new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(css.replace(match[0], `url("${reader.result}")`));
+            reader.onerror = () => reject(new Error(`Font reading failed: ${url}`));
+            reader.readAsDataURL(blob);
+          })));
+        }
+      }
+      const cs = getComputedStyle(document.documentElement);
+      const vars = ["--font-body", "--font-ui", "--font-hebrew-text", "--font-hebrew"]
+        .map((v) => `${v}:${cs.getPropertyValue(v)};`).join("");
+      return `${(await Promise.all(fonts)).join("\n")}\n:root{${vars}}`;
+    })();
+  }
+  return fontsPromise;
+}
+
+export default function QuestionMap({ parasha, mapRef, onDone }: { parasha: string; mapRef: string; onDone?: (ref: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
+  const [bookmarkError, setBookmarkError] = useState("");
+  const { authenticated, bookmarks, toggleBookmark } = useAuth();
+  const frame = useRef<HTMLIFrameElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const current = useRef(mapRef);
   current.current = mapRef;
@@ -45,29 +87,6 @@ export default function QuestionMap({ mapRef, onDone }: { mapRef: string; onDone
     return () => clearTimeout(timer.current);
   }, [mapRef, poll]);
 
-  // The map is a same-origin iframe: hand it the site's fonts (webfont rules + family variables).
-  function styleFrame(e: React.SyntheticEvent<HTMLIFrameElement>) {
-    try {
-      const doc = e.currentTarget.contentDocument;
-      if (!doc) return;
-      const fontRules: string[] = [];
-      for (const sheet of Array.from(document.styleSheets)) {
-        for (const rule of Array.from(sheet.cssRules)) {
-          if (rule instanceof CSSFontFaceRule) fontRules.push(rule.cssText);
-        }
-      }
-      const cs = getComputedStyle(document.documentElement);
-      const vars = ["--font-body", "--font-ui", "--font-hebrew-text", "--font-hebrew"]
-        .map((v) => `${v}:${cs.getPropertyValue(v)};`)
-        .join("");
-      const style = doc.createElement("style");
-      style.textContent = `${fontRules.join("\n")}\n:root{${vars}}`;
-      doc.head.appendChild(style);
-    } catch {
-      // cross-origin API: keep the built-in fallback fonts
-    }
-  }
-
   async function generate() {
     clearTimeout(timer.current);
     const s = await call(mapRef, "POST");
@@ -87,6 +106,41 @@ export default function QuestionMap({ mapRef, onDone }: { mapRef: string; onDone
   const busy = status?.state === "queued" || status?.state === "running";
   const done = status?.state === "done";
   const htmlUrl = `${API}/map/${mapRef}/html`;
+  const sendBookmarkState = useCallback(() => {
+    frame.current?.contentWindow?.postMessage({
+      type: "esstorah-bookmark-state",
+      authenticated,
+      items: bookmarks.filter((item) => item.parasha === parasha && item.ref === mapRef),
+    }, "*");
+  }, [authenticated, bookmarks, parasha, mapRef]);
+
+  const sendFonts = useCallback(() => {
+    void frameStyles().then((styles) => {
+      frame.current?.contentWindow?.postMessage({ type: "esstorah-bookmark-fonts", styles }, "*");
+    }).catch((error: Error) => console.error("Could not load question-map fonts:", error));
+  }, []);
+
+  useEffect(() => {
+    sendBookmarkState();
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== "null" || event.source !== frame.current?.contentWindow) return;
+      if (event.data?.type === "esstorah-bookmark-ready") {
+        sendBookmarkState();
+        sendFonts();
+      } else if (event.data?.type === "esstorah-bookmark-toggle") {
+        if (!authenticated) {
+          setBookmarkError("A könyvjelzőzéshez jelentkezz be.");
+          return;
+        }
+        const { kind, text } = event.data;
+        if ((kind !== "question" && kind !== "answer") || typeof text !== "string" || !text.trim()) return;
+        setBookmarkError("");
+        void toggleBookmark({ parasha, ref: mapRef, kind, text }).catch((error: Error) => setBookmarkError(error.message));
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [authenticated, mapRef, parasha, sendBookmarkState, sendFonts, toggleBookmark]);
 
   return (
     <div className="qmap">
@@ -109,12 +163,13 @@ export default function QuestionMap({ mapRef, onDone }: { mapRef: string; onDone
         </div>
       )}
       {status?.state === "error" && <p className="qmap-error">{status.error ?? "A generálás nem sikerült."}</p>}
+      {bookmarkError && <p className="qmap-error" role="alert">{bookmarkError}</p>}
       {done && (
         <>
           <a className="qmap-open" href={htmlUrl} target="_blank" rel="noreferrer">
             Megnyitás új lapon
           </a>
-          <iframe className="qmap-frame" src={htmlUrl} onLoad={styleFrame} title={`Kérdés-térkép ${mapRef}`} />
+          <iframe ref={frame} className="qmap-frame" src={htmlUrl} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" onLoad={() => { sendBookmarkState(); sendFonts(); }} title={`Kérdés-térkép ${mapRef}`} />
         </>
       )}
     </div>
