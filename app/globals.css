@@ -388,8 +388,8 @@ body.panels-collapsed #chapter-bar{ left:70px; right:20px; }
 .bookmark-preview-frame{
     display:block;
     width:100%;
-    height:min(70vh, 680px);
-    min-height:320px;
+    height:min(48vh, 480px);
+    min-height:240px;
     border:1px solid var(--ink-line);
     border-radius:8px;
     background:var(--ink);
@@ -739,7 +739,7 @@ tr.verse-row{ transition:background .2s ease; }
     .bookmarks h1{ font-size:26px; }
     .bookmark-item{ align-items:stretch; flex-direction:column; gap:8px; padding:14px; }
     .bookmark-actions{ justify-content:space-between; }
-    .bookmark-preview-frame{ height:65vh; min-height:280px; }
+    .bookmark-preview-frame{ height:42vh; min-height:220px; }
     .bilingual-table{ display:block; width:100%; }
     .bilingual-table tbody{ display:block; }
     .bilingual-table tr{ display:block; }

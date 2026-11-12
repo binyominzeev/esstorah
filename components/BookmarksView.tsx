@@ -131,7 +131,7 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
                               aria-controls={`bookmark-preview-${item.id}`}
                               onClick={() => toggleExpanded(item.id)}
                             >
-                              {previewOpen ? "Válaszok, források és linkek elrejtése" : "Válaszok, források és linkek megjelenítése"}
+                              {previewOpen ? "Összecsukás" : "Kibontás"}
                             </button>
                             <button type="button" className="bookmark-remove" aria-label={`${item.kind === "question" ? "Kérdés" : "Válasz"} eltávolítása: ${item.text.slice(0, 100)}`} onClick={() => {
                               setError("");
