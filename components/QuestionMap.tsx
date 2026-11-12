@@ -2,54 +2,28 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
+import { frameStyles } from "@/lib/frameStyles";
 
 const API = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 type Status = { state: "none" | "queued" | "running" | "done" | "error"; stage?: string; progress?: number; error?: string };
 
-let fontsPromise: Promise<string> | null = null;
-function frameStyles(): Promise<string> {
-  if (!fontsPromise) {
-    fontsPromise = (async () => {
-      const fonts: Promise<string>[] = [];
-      for (const sheet of Array.from(document.styleSheets)) {
-        let rules: CSSRuleList;
-        try {
-          rules = sheet.cssRules;
-        } catch {
-          continue;
-        }
-        for (const rule of Array.from(rules)) {
-          if (!(rule instanceof CSSFontFaceRule)) continue;
-          const css = rule.cssText;
-          const match = /url\(["']?([^"')]+)["']?\)/.exec(css);
-          if (!match) continue;
-          const url = new URL(match[1], sheet.href || document.baseURI).href;
-          fonts.push(fetch(url).then((response) => {
-            if (!response.ok) throw new Error(`Font download failed (${response.status}): ${url}`);
-            return response.blob();
-          }).then((blob) => new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(css.replace(match[0], `url("${reader.result}")`));
-            reader.onerror = () => reject(new Error(`Font reading failed: ${url}`));
-            reader.readAsDataURL(blob);
-          })));
-        }
-      }
-      const cs = getComputedStyle(document.documentElement);
-      const vars = ["--font-body", "--font-ui", "--font-hebrew-text", "--font-hebrew"]
-        .map((v) => `${v}:${cs.getPropertyValue(v)};`).join("");
-      return `${(await Promise.all(fonts)).join("\n")}\n:root{${vars}}`;
-    })();
-  }
-  return fontsPromise;
-}
-
-export default function QuestionMap({ parasha, mapRef, onDone }: { parasha: string; mapRef: string; onDone?: (ref: string) => void }) {
+export default function QuestionMap({
+  parasha,
+  mapRef,
+  onDone,
+  bookmarkTarget,
+}: {
+  parasha: string;
+  mapRef: string;
+  onDone?: (ref: string) => void;
+  bookmarkTarget?: { ref: string; kind: "question" | "answer"; text: string };
+}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [bookmarkError, setBookmarkError] = useState("");
   const { authenticated, bookmarks, toggleBookmark } = useAuth();
   const frame = useRef<HTMLIFrameElement>(null);
+  const frameReady = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const current = useRef(mapRef);
   current.current = mapRef;
@@ -82,6 +56,7 @@ export default function QuestionMap({ parasha, mapRef, onDone }: { parasha: stri
 
   // On every verse change, check the server: show a finished map, resume a running job.
   useEffect(() => {
+    frameReady.current = false;
     setStatus(null);
     poll(mapRef);
     return () => clearTimeout(timer.current);
@@ -114,6 +89,19 @@ export default function QuestionMap({ parasha, mapRef, onDone }: { parasha: stri
     }, "*");
   }, [authenticated, bookmarks, parasha, mapRef]);
 
+  const sendBookmarkTarget = useCallback(() => {
+    if (bookmarkTarget?.ref !== mapRef) return;
+    frame.current?.contentWindow?.postMessage({
+      type: "esstorah-bookmark-open",
+      kind: bookmarkTarget.kind,
+      text: bookmarkTarget.text,
+    }, "*");
+  }, [bookmarkTarget, mapRef]);
+
+  useEffect(() => {
+    if (frameReady.current) sendBookmarkTarget();
+  }, [sendBookmarkTarget]);
+
   const sendFonts = useCallback(() => {
     void frameStyles().then((styles) => {
       frame.current?.contentWindow?.postMessage({ type: "esstorah-bookmark-fonts", styles }, "*");
@@ -125,8 +113,10 @@ export default function QuestionMap({ parasha, mapRef, onDone }: { parasha: stri
     function onMessage(event: MessageEvent) {
       if (event.origin !== "null" || event.source !== frame.current?.contentWindow) return;
       if (event.data?.type === "esstorah-bookmark-ready") {
+        frameReady.current = true;
         sendBookmarkState();
         sendFonts();
+        sendBookmarkTarget();
       } else if (event.data?.type === "esstorah-bookmark-toggle") {
         if (!authenticated) {
           setBookmarkError("A könyvjelzőzéshez jelentkezz be.");
@@ -140,7 +130,7 @@ export default function QuestionMap({ parasha, mapRef, onDone }: { parasha: stri
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [authenticated, mapRef, parasha, sendBookmarkState, sendFonts, toggleBookmark]);
+  }, [authenticated, mapRef, parasha, sendBookmarkState, sendBookmarkTarget, sendFonts, toggleBookmark]);
 
   return (
     <div className="qmap">
@@ -169,7 +159,7 @@ export default function QuestionMap({ parasha, mapRef, onDone }: { parasha: stri
           <a className="qmap-open" href={htmlUrl} target="_blank" rel="noreferrer">
             Megnyitás új lapon
           </a>
-          <iframe ref={frame} className="qmap-frame" src={htmlUrl} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" onLoad={() => { sendBookmarkState(); sendFonts(); }} title={`Kérdés-térkép ${mapRef}`} />
+          <iframe key={mapRef} ref={frame} className="qmap-frame" src={htmlUrl} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" onLoad={() => { frameReady.current = true; sendBookmarkState(); sendFonts(); sendBookmarkTarget(); }} title={`Kérdés-térkép ${mapRef}`} />
         </>
       )}
     </div>

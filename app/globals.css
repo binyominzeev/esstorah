@@ -342,8 +342,9 @@ body.panels-collapsed #chapter-bar{ left:70px; right:20px; }
 }
 .bookmark-item{
     display:flex;
-    align-items:center;
+    align-items:flex-start;
     gap:16px;
+    flex-wrap:wrap;
     padding:14px 16px;
 }
 .bookmark-item + .bookmark-item{ border-top:1px solid var(--ink-line); }
@@ -367,8 +368,8 @@ body.panels-collapsed #chapter-bar{ left:70px; right:20px; }
     overflow-wrap:anywhere;
     white-space:pre-wrap;
 }
-.bookmark-remove{
-    flex:none;
+.bookmark-actions{ display:flex; flex:none; align-items:center; flex-wrap:wrap; gap:6px; }
+.bookmark-expand, .bookmark-remove{
     min-height:40px;
     padding:7px 10px;
     border:1px solid transparent;
@@ -378,7 +379,21 @@ body.panels-collapsed #chapter-bar{ left:70px; right:20px; }
     font:12px var(--font-ui);
     cursor:pointer;
 }
+.bookmark-expand:hover, .bookmark-expand[aria-expanded="true"]{ border-color:var(--ink-line); color:var(--gold-bright); }
+.bookmark-remove{
+    flex:none;
+}
 .bookmark-remove:hover{ border-color:var(--ink-line); color:var(--text-light); }
+.bookmark-preview{ flex:1 0 100%; min-width:0; }
+.bookmark-preview-frame{
+    display:block;
+    width:100%;
+    height:min(70vh, 680px);
+    min-height:320px;
+    border:1px solid var(--ink-line);
+    border-radius:8px;
+    background:var(--ink);
+}
 .bookmarks-empty{
     margin:0;
     padding:22px;
@@ -666,7 +681,7 @@ tr.verse-row{ transition:background .2s ease; }
         margin-right:0;
         padding:88px 18px 100px;
     }
-    .bookmarks-filter select, .bookmarks-login, .bookmark-remove{ min-height:44px; }
+    .bookmarks-filter select, .bookmarks-login, .bookmark-expand, .bookmark-remove{ min-height:44px; }
 
     .bilingual-table{ box-shadow:0 12px 30px -10px rgba(0,0,0,.5), 0 0 0 1px var(--parchment-edge); }
 
@@ -722,8 +737,9 @@ tr.verse-row{ transition:background .2s ease; }
 
 @media (max-width:640px){
     .bookmarks h1{ font-size:26px; }
-    .bookmark-item{ align-items:flex-start; flex-direction:column; gap:2px; padding:14px; }
-    .bookmark-remove{ align-self:flex-end; min-height:44px; margin:-2px -8px -8px 0; }
+    .bookmark-item{ align-items:stretch; flex-direction:column; gap:8px; padding:14px; }
+    .bookmark-actions{ justify-content:space-between; }
+    .bookmark-preview-frame{ height:65vh; min-height:280px; }
     .bilingual-table{ display:block; width:100%; }
     .bilingual-table tbody{ display:block; }
     .bilingual-table tr{ display:block; }

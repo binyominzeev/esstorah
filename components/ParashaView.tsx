@@ -11,6 +11,12 @@ interface ActiveInfo {
   book?: string;
 }
 
+interface BookmarkTarget {
+  ref: string;
+  kind: "question" | "answer";
+  text: string;
+}
+
 /** One static page serves every /slug, /slug/chapter and /slug/chapter/verse URL (nginx maps them all here); this parses which one it is on mount. */
 function parseLocation(slug: string): { chapter: number; verse: number | null } | null {
   const parts = window.location.pathname.split("/").filter(Boolean);
@@ -36,6 +42,7 @@ export default function ParashaView({
   const [activeInfo, setActiveInfo] = useState<ActiveInfo | undefined>();
   const [currentChapter, setCurrentChapter] = useState<number | null>(null);
   const [aiDone, setAiDone] = useState<Set<string>>(new Set());
+  const [bookmarkTarget, setBookmarkTarget] = useState<BookmarkTarget | undefined>();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Verses that already have an AI summary: loaded once, then extended whenever a map finishes.
@@ -94,6 +101,15 @@ export default function ParashaView({
 
   // Initial load: highlight/scroll to whatever the URL (set by nginx's chapter/verse rewrite) asked for.
   useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const ref = params.get("bookmarkRef");
+    const kind = params.get("bookmarkKind");
+    const text = params.get("bookmarkText");
+    if (ref && (kind === "question" || kind === "answer") && text?.trim()) {
+      setBookmarkTarget({ ref, kind, text });
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+    }
+
     const target = parseLocation(slug);
     if (!target) return;
     if (target.verse !== null) {
@@ -232,6 +248,7 @@ export default function ParashaView({
         sefariaLabel={sefariaLabel}
         mapRef={mapRef}
         onMapDone={markAiDone}
+        bookmarkTarget={bookmarkTarget}
         commentaries={commentaries}
       />
     </div>

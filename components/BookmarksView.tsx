@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
+import { frameStyles } from "@/lib/frameStyles";
+
+const API = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 export default function BookmarksView({ parashot }: { parashot: { slug: string; name: string }[] }) {
   const { ready, authenticated, bookmarks, login, toggleBookmark, error: authError } = useAuth();
   const [selected, setSelected] = useState("");
   const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const previewFrames = useRef(new Map<number, HTMLIFrameElement>());
 
   useEffect(() => {
     const slug = new URLSearchParams(location.search).get("parasha");
@@ -17,6 +22,52 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
   const visible = selected ? slugs.filter((slug) => slug === selected) : slugs;
   const label = (slug: string) => parashot.find((item) => item.slug === slug)?.name ?? slug;
   const visibleCount = selected ? bookmarks.filter((item) => item.parasha === selected).length : bookmarks.length;
+
+  const sendPreviewState = useCallback((frame: HTMLIFrameElement, parasha: string, ref: string) => {
+    frame.contentWindow?.postMessage({
+      type: "esstorah-bookmark-state",
+      authenticated,
+      items: bookmarks.filter((item) => item.parasha === parasha && item.ref === ref),
+    }, "*");
+  }, [authenticated, bookmarks]);
+
+  useEffect(() => {
+    for (const [id, frame] of previewFrames.current) {
+      const item = bookmarks.find((bookmark) => bookmark.id === id);
+      if (item) sendPreviewState(frame, item.parasha, item.ref);
+    }
+  }, [sendPreviewState]);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== "null" || event.data?.type !== "esstorah-bookmark-toggle") return;
+      for (const [id, frame] of previewFrames.current) {
+        if (event.source !== frame.contentWindow) continue;
+        const item = bookmarks.find((bookmark) => bookmark.id === id);
+        const { kind, text } = event.data;
+        if (!item || (kind !== "question" && kind !== "answer") || typeof text !== "string" || !text.trim()) return;
+        if (!authenticated) {
+          setError("A könyvjelzőzéshez jelentkezz be.");
+          return;
+        }
+        setError("");
+        void toggleBookmark({ parasha: item.parasha, ref: item.ref, kind, text })
+          .catch((err: Error) => setError(err.message));
+        return;
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [authenticated, bookmarks, toggleBookmark]);
+
+  function toggleExpanded(id: number) {
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <main className="content bookmarks">
@@ -57,19 +108,62 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
                   <ul>
                     {items.map((item) => {
                       const [, chapter, verse] = item.ref.split(".");
+                      const previewOpen = expanded.has(item.id);
+                      const targetHash = new URLSearchParams({
+                        bookmarkRef: item.ref,
+                        bookmarkKind: item.kind,
+                        bookmarkText: item.text,
+                      }).toString();
                       return (
                         <li key={item.id} className="bookmark-item">
                           <div className="bookmark-body">
                             <div className="bookmark-meta">
                               <span className={`bookmark-kind ${item.kind}`}>{item.kind === "question" ? "Kérdés" : "Válasz"}</span>
-                              <a href={`/${encodeURIComponent(slug)}/${chapter}/${verse}`}>{item.ref} <span aria-hidden="true">→</span></a>
+                              <a href={`/${encodeURIComponent(slug)}/${chapter}/${verse}#${targetHash}`}>{item.ref} <span aria-hidden="true">→</span></a>
                             </div>
                             <p>{item.text}</p>
                           </div>
-                          <button type="button" className="bookmark-remove" aria-label={`${item.kind === "question" ? "Kérdés" : "Válasz"} eltávolítása: ${item.text.slice(0, 100)}`} onClick={() => {
-                            setError("");
-                            void toggleBookmark(item).catch((err: Error) => setError(err.message));
-                          }}>Eltávolítás</button>
+                          <div className="bookmark-actions">
+                            <button
+                              type="button"
+                              className="bookmark-expand"
+                              aria-expanded={previewOpen}
+                              aria-controls={`bookmark-preview-${item.id}`}
+                              onClick={() => toggleExpanded(item.id)}
+                            >
+                              {previewOpen ? "Válaszok, források és linkek elrejtése" : "Válaszok, források és linkek megjelenítése"}
+                            </button>
+                            <button type="button" className="bookmark-remove" aria-label={`${item.kind === "question" ? "Kérdés" : "Válasz"} eltávolítása: ${item.text.slice(0, 100)}`} onClick={() => {
+                              setError("");
+                              void toggleBookmark(item).catch((err: Error) => setError(err.message));
+                            }}>Eltávolítás</button>
+                          </div>
+                          {previewOpen && (
+                            <div id={`bookmark-preview-${item.id}`} className="bookmark-preview">
+                              <iframe
+                                ref={(frame) => {
+                                  if (frame) previewFrames.current.set(item.id, frame);
+                                  else previewFrames.current.delete(item.id);
+                                }}
+                                className="bookmark-preview-frame"
+                                src={`${API}/map/${item.ref}/html`}
+                                sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+                                title={`${item.ref} – ${item.kind === "question" ? "kérdés" : "válasz"} előnézete`}
+                                onLoad={(event) => {
+                                  const frame = event.currentTarget;
+                                  sendPreviewState(frame, item.parasha, item.ref);
+                                  void frameStyles().then((styles) => {
+                                    frame.contentWindow?.postMessage({ type: "esstorah-bookmark-fonts", styles }, "*");
+                                  }).catch((err: Error) => console.error("Could not load question-map fonts:", err));
+                                  frame.contentWindow?.postMessage({
+                                    type: "esstorah-bookmark-open",
+                                    kind: item.kind,
+                                    text: item.text,
+                                  }, "*");
+                                }}
+                              />
+                            </div>
+                          )}
                         </li>
                       );
                     })}
