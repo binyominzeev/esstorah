@@ -55,7 +55,8 @@ verse (including existing Obsidian links), and Rashi's Hebrew text from Sefaria.
 Verse numbers with a commentary are underlined. Rashi is fetched in the browser,
 so it requires an internet connection.
 On the commentary tab, **Összes kommentár mutatása** lists every note for the
-parasha; its verse buttons select and scroll to the corresponding verse.
+parasha, with a linked table of contents; its verse buttons select and scroll
+to the corresponding verse.
 
 Import a Markdown file containing numbered level-two headings such as
 `## 1. 29:18–20 – Title` into an existing parasha in the vault:

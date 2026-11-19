@@ -47,6 +47,7 @@ export default function CommentaryPanel({
   const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; moved: boolean } | null>(null);
   const ignoreNextClickRef = useRef(false);
   const [showAll, setShowAll] = useState(false);
+  const [titles, setTitles] = useState<Record<string, string>>({});
   const relevantCommentaries = commentaries.filter((c) =>
     c.verses.some((v) => v.chapter === activeInfo?.chapter && v.verse === activeInfo?.verse)
   );
@@ -58,6 +59,15 @@ export default function CommentaryPanel({
     if (!bFirst) return -1;
     return aFirst.chapter - bFirst.chapter || aFirst.verse - bFirst.verse;
   });
+
+  useEffect(() => {
+    const parser = new DOMParser();
+    setTitles(Object.fromEntries(commentaries.map((c) => {
+      const doc = parser.parseFromString(c.html, "text/html");
+      const title = doc.querySelector("h1, h2, h3, h4, h5, h6")?.textContent?.trim();
+      return [c.id, title || c.id.replace(/[-_]+/g, " ")];
+    })));
+  }, [commentaries]);
 
   useEffect(() => {
     if (open && tab === "commentaries" && selectedCommentary) {
@@ -187,10 +197,35 @@ export default function CommentaryPanel({
         <button type="button" className="commentary-toggle" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
           {showAll ? "Csak a kiválasztott pászuk kommentárjai" : "Összes kommentár mutatása"}
         </button>
+        {showAll && allCommentaries.length > 0 && (
+          <nav className="commentary-toc" aria-label="Kommentárok tartalomjegyzéke">
+            <h2>Tartalom</h2>
+            <ol>
+              {allCommentaries.map((c) => (
+                <li key={c.id}>
+                  <a href={`#${encodeURIComponent(`commentary-${c.id}`)}`} onClick={(event) => {
+                    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    const panel = panelRef.current;
+                    const target = document.getElementById(`commentary-${c.id}`);
+                    if (!panel || !target) return;
+                    target.focus({ preventScroll: true });
+                    panel.scrollTo({
+                      top: panel.scrollTop + target.getBoundingClientRect().top - panel.getBoundingClientRect().top - 12,
+                      behavior: "smooth",
+                    });
+                  }}>
+                    {titles[c.id] || c.id.replace(/[-_]+/g, " ")}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )}
         {!showAll && !activeInfo ? <p className="panel-message">Kattints egy pászukra, vagy mutasd az összes kommentárt.</p> :
           (showAll ? allCommentaries : relevantCommentaries).length ?
             (showAll ? allCommentaries : relevantCommentaries).map((c) => (
-              <article key={c.id} id={`commentary-${c.id}`} className="commentary commentary-note">
+              <article key={c.id} id={`commentary-${c.id}`} className="commentary commentary-note" tabIndex={-1}>
                 {showAll && c.verses.length > 0 && (
                   <div className="commentary-verse-links" aria-label="Ugrás a kommentár pászukához">
                     <span>Ugrás:</span>
