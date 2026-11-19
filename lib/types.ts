@@ -6,6 +6,7 @@ export interface RowData {
 export interface CommentaryEntry {
   id: string;
   html: string;
+  verses: { chapter: number; verse: number }[];
 }
 
 export interface ChapterVerses {

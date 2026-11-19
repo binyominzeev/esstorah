@@ -15,7 +15,7 @@ function escapeAttr(value: string): string {
  * Converts vault Markdown to HTML, turning Obsidian-style wiki links into
  * commentary references (`data-commentary-id`) instead of Python's inline onclick.
  */
-export function markdownToHtml(mdText: string): string {
+export function markdownToHtml(mdText: string, preserveParagraphs = false): string {
   // [[id|caption]] -> commentary link
   let text = mdText.replace(
     /\[\[([^\]|]+)\|([^\]]+)\]\]/g,
@@ -33,7 +33,7 @@ export function markdownToHtml(mdText: string): string {
   );
 
   // Force every source line break to start a new Markdown paragraph.
-  text = text.replace(/\n/g, "  \n\n");
+  if (!preserveParagraphs) text = text.replace(/\n/g, "  \n\n");
 
   let html = marked.parse(text, { async: false }) as string;
 

@@ -43,6 +43,8 @@ export default function ParashaView({
   const [currentChapter, setCurrentChapter] = useState<number | null>(null);
   const [aiDone, setAiDone] = useState<Set<string>>(new Set());
   const [bookmarkTarget, setBookmarkTarget] = useState<BookmarkTarget | undefined>();
+  const [panelTab, setPanelTab] = useState<"questions" | "commentaries" | "rashi">("questions");
+  const [selectedCommentary, setSelectedCommentary] = useState<string>();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Verses that already have an AI summary: loaded once, then extended whenever a map finishes.
@@ -72,6 +74,17 @@ export default function ParashaView({
       container.querySelectorAll(`.${cls}`).forEach((n) => n.classList.toggle("has-ai", on));
     });
   }, [aiDone, rows]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const refs = new Set(commentaries.flatMap((c) => c.verses.map((v) => `${v.chapter}:${v.verse}`)));
+    container.querySelectorAll<HTMLElement>("[data-href][data-chapter][data-verse]").forEach((el) => {
+      const hasCommentary = refs.has(`${el.dataset.chapter}:${el.dataset.verse}`);
+      el.classList.toggle("has-commentary", hasCommentary);
+      if (hasCommentary) el.title = "Ehhez a pászukhoz kommentár tartozik";
+    });
+  }, [commentaries, rows]);
 
   function goToChapter(chapter: number) {
     containerRef.current
@@ -184,10 +197,16 @@ export default function ParashaView({
     if (commentaryEl) {
       e.preventDefault();
       const id = commentaryEl.getAttribute("data-commentary-id")!;
-      setPanelOpen(true);
-      requestAnimationFrame(() => {
-        document.getElementById(`commentary-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
+      const verseText = commentaryEl.closest('[class*="vrs-ch"]');
+      const key = verseText && extractVerseKey(verseText);
+      const match = key?.match(/^ch(\d+)-vrs(\d+)$/);
+      if (match) {
+        window.history.pushState(null, "", `/${encodeURIComponent(slug)}/${match[1]}/${match[2]}`);
+        activateVerse(Number(match[1]), Number(match[2]), false);
+      }
+      else setPanelOpen(true);
+      setSelectedCommentary(id);
+      setPanelTab("commentaries");
       return;
     }
 
@@ -197,6 +216,7 @@ export default function ParashaView({
       const chapter = Number(verseEl.dataset.chapter);
       const verse = Number(verseEl.dataset.verse);
       window.history.pushState(null, "", verseEl.dataset.href!);
+      setSelectedCommentary(undefined);
       activateVerse(chapter, verse, false);
     }
   }
@@ -250,6 +270,10 @@ export default function ParashaView({
         onMapDone={markAiDone}
         bookmarkTarget={bookmarkTarget}
         commentaries={commentaries}
+        activeInfo={activeInfo}
+        tab={panelTab}
+        onTabChange={setPanelTab}
+        selectedCommentary={selectedCommentary}
       />
     </div>
   );

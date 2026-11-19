@@ -3,6 +3,14 @@
 import { useEffect, useRef } from "react";
 import type { CommentaryEntry } from "@/lib/types";
 import QuestionMap from "./QuestionMap";
+import RashiText from "./RashiText";
+
+type PanelTab = "questions" | "commentaries" | "rashi";
+const tabs: { id: PanelTab; label: string }[] = [
+  { id: "questions", label: "Kérdések" },
+  { id: "commentaries", label: "Kommentárok" },
+  { id: "rashi", label: "Rási" },
+];
 
 export default function CommentaryPanel({
   parasha,
@@ -14,6 +22,10 @@ export default function CommentaryPanel({
   onMapDone,
   bookmarkTarget,
   commentaries,
+  activeInfo,
+  tab,
+  onTabChange,
+  selectedCommentary,
 }: {
   parasha: string;
   open: boolean;
@@ -24,10 +36,23 @@ export default function CommentaryPanel({
   onMapDone?: (ref: string) => void;
   bookmarkTarget?: { ref: string; kind: "question" | "answer"; text: string };
   commentaries: CommentaryEntry[];
+  activeInfo?: { chapter: number; verse: number; book?: string };
+  tab: PanelTab;
+  onTabChange: (tab: PanelTab) => void;
+  selectedCommentary?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; moved: boolean } | null>(null);
   const ignoreNextClickRef = useRef(false);
+  const relevantCommentaries = commentaries.filter((c) =>
+    c.verses.some((v) => v.chapter === activeInfo?.chapter && v.verse === activeInfo?.verse)
+  );
+
+  useEffect(() => {
+    if (open && tab === "commentaries" && selectedCommentary) {
+      document.getElementById(`commentary-${selectedCommentary}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [open, tab, selectedCommentary, activeInfo]);
 
   useEffect(() => {
     if (!open && panelRef.current) {
@@ -120,29 +145,42 @@ export default function CommentaryPanel({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
       />
-      {sefariaHref ? (
-        <div id="sefaria-box" className="commentary">
-          <p className="vrs-label">{sefariaLabel}</p>
-          <p>
-            <strong>
-              <a id="sefaria-link" href={sefariaHref} target="_blank" rel="noreferrer">
-                Open on Sefaria
-              </a>
-            </strong>
-          </p>
-        </div>
-      ) : (
-        <div className="panel-empty">
-          <div className="seal">א</div>
-          Kattints egy pászukra,
-          <br />
-          és megjelenik itt a Sefaria-link.
+      {sefariaHref && (
+        <div id="sefaria-box" className="panel-heading">
+          <span className="vrs-label">{sefariaLabel}</span>
+          <a id="sefaria-link" href={sefariaHref} target="_blank" rel="noreferrer">Sefaria ↗</a>
         </div>
       )}
-      {mapRef && <QuestionMap parasha={parasha} mapRef={mapRef} onDone={onMapDone} bookmarkTarget={bookmarkTarget} />}
-      {commentaries.map((c) => (
-        <div key={c.id} id={`commentary-${c.id}`} className="commentary" dangerouslySetInnerHTML={{ __html: c.html }} />
-      ))}
+      <div className="panel-tabs" role="tablist" aria-label="Pászukhoz kapcsolódó tartalom">
+        {tabs.map((item, index) => (
+          <button key={item.id} id={`tab-${item.id}`} type="button" role="tab"
+            aria-selected={tab === item.id} aria-controls={`panel-${item.id}`}
+            tabIndex={tab === item.id ? 0 : -1}
+            onClick={() => onTabChange(item.id)}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              const next = tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+              onTabChange(next.id);
+              document.getElementById(`tab-${next.id}`)?.focus();
+            }}>
+            {item.label}{item.id === "commentaries" && relevantCommentaries.length > 0 && <span className="tab-count">{relevantCommentaries.length}</span>}
+          </button>
+        ))}
+      </div>
+      {!activeInfo && <div className="panel-empty"><div className="seal">א</div>Kattints egy pászukra a kapcsolódó tartalomhoz.</div>}
+      <div id="panel-questions" role="tabpanel" aria-labelledby="tab-questions" hidden={tab !== "questions" || !activeInfo}>
+        {mapRef && <QuestionMap parasha={parasha} mapRef={mapRef} onDone={onMapDone} bookmarkTarget={bookmarkTarget} />}
+      </div>
+      <div id="panel-commentaries" role="tabpanel" aria-labelledby="tab-commentaries" hidden={tab !== "commentaries" || !activeInfo}>
+        {relevantCommentaries.length ? relevantCommentaries.map((c) => (
+          <article key={c.id} id={`commentary-${c.id}`} className="commentary commentary-note" dangerouslySetInnerHTML={{ __html: c.html }} />
+        )) : <p className="panel-message">Ehhez a pászukhoz még nincs kommentár.</p>}
+      </div>
+      <div id="panel-rashi" role="tabpanel" aria-labelledby="tab-rashi" hidden={tab !== "rashi" || !activeInfo}>
+        {tab === "rashi" && activeInfo?.book && <RashiText book={activeInfo.book} chapter={activeInfo.chapter} verse={activeInfo.verse} />}
+        {tab === "rashi" && activeInfo && !activeInfo.book && <p className="panel-message">Ehhez a könyvhöz nem érhető el Sefaria-hivatkozás.</p>}
+      </div>
     </div>
   );
 }

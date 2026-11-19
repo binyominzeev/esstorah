@@ -48,6 +48,30 @@ Open http://localhost:3000. Deep verse links like `/Softim/17/14` and chapter li
 `/Softim`) — use `npm run build` + a static server with the nginx rewrite (see below) to test
 those, or just open `/Softim` and click a verse.
 
+## Commentary import
+
+The right panel has separate tabs for AI questions, commentaries on the selected
+verse (including existing Obsidian links), and Rashi's Hebrew text from Sefaria.
+Verse numbers with a commentary are underlined. Rashi is fetched in the browser,
+so it requires an internet connection.
+
+Import a Markdown file containing numbered level-two headings such as
+`## 1. 29:18–20 – Title` into an existing parasha in the vault:
+
+```bash
+python3 content-sync/import_commentary.py vajece.md "/path/to/vault/1 Berésit/Vájécé" --map '6=29:30-31' --dry-run
+python3 content-sync/import_commentary.py vajece.md "/path/to/vault/1 Berésit/Vájécé" --map '6=29:30-31'
+```
+
+Each numbered section becomes a separate `perusim/<source>-<number>.md` note.
+References in the heading, including same-chapter ranges, are expanded and
+checked against the parasha. Use `--map 'NUMBER=29:1,29:3-4'` to supply or
+override a section's references; missing or invalid references stop the import.
+The introduction and unnumbered closing sections are not imported. Existing
+files are never overwritten. The notes use `mytorah-verses` frontmatter and
+are picked up by the normal Markdown content sync; rebuild the static site
+after syncing. Imported notes do not modify the Torah text.
+
 ## Build
 
 ```bash

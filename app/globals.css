@@ -624,18 +624,19 @@ tr.verse-row{ transition:background .2s ease; }
     background:var(--ink);
     border:1px solid var(--ink-line);
     border-radius:10px;
-    padding:20px;
+    padding:12px 14px;
     animation:panel-in .25s ease;
 }
 @keyframes panel-in{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:translateY(0);} }
 
+.panel-heading{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
 #sefaria-box .vrs-label{
     font-family:var(--font-ui);
     font-size:11px;
     letter-spacing:.08em;
     text-transform:uppercase;
     color:var(--text-light-soft);
-    margin:0 0 10px;
+    margin:0;
 }
 
 #sefaria-link{
@@ -643,15 +644,54 @@ tr.verse-row{ transition:background .2s ease; }
     align-items:center;
     gap:8px;
     font-family:var(--font-ui);
-    font-size:14px;
+    font-size:12px;
     font-weight:600;
     color:var(--ink);
     background:var(--gold);
-    padding:11px 18px;
+    padding:7px 10px;
     border-radius:7px;
     transition:background .15s ease;
 }
 #sefaria-link:hover{ background:var(--gold-bright); }
+
+.panel-tabs{
+    display:flex;
+    gap:2px;
+    margin:20px -8px 8px;
+    border-bottom:1px solid var(--ink-line);
+}
+.panel-tabs button{
+    flex:1;
+    min-width:0;
+    padding:10px 3px;
+    border:0;
+    border-bottom:2px solid transparent;
+    background:none;
+    color:var(--text-light-soft);
+    font:600 12px var(--font-ui);
+    cursor:pointer;
+}
+.panel-tabs button[aria-selected="true"]{ color:var(--gold-bright); border-bottom-color:var(--gold); }
+.panel-tabs button:focus-visible{ outline:2px solid var(--gold); outline-offset:-2px; }
+.tab-count{ margin-left:4px; color:var(--gold-dim); }
+.panel-message{ color:var(--text-light-soft); font:14px/1.7 var(--font-body); }
+.commentary-note{
+    margin:16px 0;
+    padding:16px;
+    border:1px solid var(--ink-line);
+    border-radius:10px;
+    color:var(--text-light);
+    font:15px/1.7 var(--font-body);
+    overflow-wrap:anywhere;
+}
+.commentary-note h1, .commentary-note h2, .commentary-note h3{ color:var(--gold-bright); font-size:18px; line-height:1.4; }
+.commentary-note p:first-child, .commentary-note h2:first-child{ margin-top:0; }
+.commentary-note p:last-child{ margin-bottom:0; }
+.commentary-note a{ color:var(--gold-bright); text-decoration:underline; }
+.rashi-text{ color:var(--text-light); font:22px/1.8 var(--hebrew-text-font-family); }
+.rashi-text p{ margin:16px 0; }
+.rashi-text strong{ color:var(--gold-bright); }
+.bilingual-table .has-commentary{ text-decoration:underline; text-decoration-color:var(--gold-dim); text-underline-offset:3px; }
 
 .panel-close{
     display:none;

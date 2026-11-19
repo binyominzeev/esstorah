@@ -241,18 +241,54 @@ function attachHuVerseNumbers(html: string, verses: VerseInfo[], slug: string, b
 function collectCommentaries(
   html: string,
   parashaPath: string,
-  seen: Set<string>,
-  out: CommentaryEntry[]
+  chapter: number,
+  out: Map<string, CommentaryEntry>
 ): void {
-  const re = /data-commentary-id="([^"]+)"/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(html))) {
-    const id = match[1];
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const commentPath = path.join(parashaPath, "perusim", `${id}.md`);
-    if (fs.existsSync(commentPath)) {
-      out.push({ id, html: markdownToHtml(readMarkdownFile(commentPath)) });
+  const markers = Array.from(html.matchAll(HU_VERSE_MARKER_RE));
+  for (let i = 0; i < markers.length; i++) {
+    const marker = markers[i];
+    const verse = Number(marker.groups!.verse);
+    const segment = html.slice(marker.index! + marker[0].length, markers[i + 1]?.index ?? html.length);
+    for (const match of segment.matchAll(/data-commentary-id="([^"]+)"/g)) {
+      const id = match[1];
+      // Vault links must refer to a note in this parasha's perusim directory.
+      if (id.includes("/") || id.includes("\\") || id === "..") continue;
+      const commentPath = path.join(parashaPath, "perusim", `${id}.md`);
+      if (!fs.existsSync(commentPath)) continue;
+      let entry = out.get(id);
+      if (!entry) {
+        entry = { id, html: markdownToHtml(removeCssClasses(readMarkdownFile(commentPath))), verses: [] };
+        out.set(id, entry);
+      }
+      if (!entry.verses.some((v) => v.chapter === chapter && v.verse === verse)) {
+        entry.verses.push({ chapter, verse });
+      }
+    }
+  }
+}
+
+function collectImportedCommentaries(parashaPath: string, out: Map<string, CommentaryEntry>, validVerses: Map<number, Set<number>>): void {
+  const dir = path.join(parashaPath, "perusim");
+  if (!fs.existsSync(dir)) return;
+  for (const file of fs.readdirSync(dir).sort()) {
+    if (!file.endsWith(".md")) continue;
+    const id = file.slice(0, -3);
+    const md = readMarkdownFile(path.join(dir, file));
+    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(md);
+    const refs = frontmatter?.[1].match(/^mytorah-verses: "([^"]+)"$/m)?.[1];
+    if (!refs) continue;
+    let entry = out.get(id);
+    if (!entry) {
+      entry = { id, html: markdownToHtml(md.slice(frontmatter![0].length), true), verses: [] };
+      out.set(id, entry);
+    }
+    for (const ref of refs.split(",")) {
+      const match = /^(\d+):(\d+)$/.exec(ref.trim());
+      if (!match || !validVerses.get(Number(match[1]))?.has(Number(match[2]))) {
+        throw new Error(`Invalid commentary verse ${ref} in ${path.join(dir, file)}`);
+      }
+      const chapter = Number(match[1]), verse = Number(match[2]);
+      if (!entry.verses.some((v) => v.chapter === chapter && v.verse === verse)) entry.verses.push({ chapter, verse });
     }
   }
 }
@@ -271,8 +307,7 @@ export function getParashaData(book: string, parasha: string): ParashaData {
   const lineCount = Math.max(heLines.length, huLines.length);
 
   const rows: RowData[] = [];
-  const commentaries: CommentaryEntry[] = [];
-  const seenCommentaries = new Set<string>();
+  const commentaries = new Map<string, CommentaryEntry>();
   const chapterSet = new Set<number>();
   const versesByChapter = new Map<number, Set<number>>();
 
@@ -307,7 +342,7 @@ export function getParashaData(book: string, parasha: string): ParashaData {
       rowVerses.forEach((v) => set!.add(v.verse));
     }
 
-    collectCommentaries(huHtml, parashaPath, seenCommentaries, commentaries);
+    collectCommentaries(huHtml, parashaPath, chapter, commentaries);
 
     rows.push({ heHtml, huHtml });
   }
@@ -316,13 +351,15 @@ export function getParashaData(book: string, parasha: string): ParashaData {
     .sort((a, b) => a[0] - b[0])
     .map(([c, vs]) => ({ chapter: c, verses: Array.from(vs).sort((a, b) => a - b) }));
 
+  collectImportedCommentaries(parashaPath, commentaries, versesByChapter);
+
   return {
     book,
     parasha,
     slug,
     sefariaBook,
     rows,
-    commentaries,
+    commentaries: Array.from(commentaries.values()),
     chapters: Array.from(chapterSet).sort((a, b) => a - b),
     verses,
   };
