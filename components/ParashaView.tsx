@@ -46,6 +46,7 @@ export default function ParashaView({
   const [panelTab, setPanelTab] = useState<"questions" | "commentaries" | "rashi">("questions");
   const [selectedCommentary, setSelectedCommentary] = useState<string>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const commentaryScrollRef = useRef<{ href: string; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   // Verses that already have an AI summary: loaded once, then extended whenever a map finishes.
@@ -140,11 +141,15 @@ export default function ParashaView({
   // without pushing new history entries or touching the active-verse highlight.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const content = contentRef.current;
+    if (!container || !content) return;
 
     let ticking = false;
+    let skipUrlUpdate = false;
     function updateFromScroll() {
       ticking = false;
+      const skipUrl = skipUrlUpdate;
+      skipUrlUpdate = false;
       let headingChapter: number | null = null;
       container!.querySelectorAll<HTMLElement>('h1[id^="chapter-"]').forEach((h) => {
         if (h.getBoundingClientRect().top - 140 <= 0) headingChapter = Number(h.id.slice(8));
@@ -160,13 +165,14 @@ export default function ParashaView({
       const { chapter, verse } = current.dataset;
       if (headingChapter === null && chapter) setCurrentChapter(Number(chapter));
       if (!chapter || !verse) return;
-      if (commentaryScrollRef.current) return;
+      if (skipUrl || commentaryScrollRef.current) return;
       const href = `/${encodeURIComponent(slug)}/${chapter}/${verse}`;
       if (window.location.pathname !== href) {
         window.history.replaceState(window.history.state, "", href);
       }
     }
     function onScroll() {
+      if (commentaryScrollRef.current) skipUrlUpdate = true;
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(updateFromScroll);
@@ -183,7 +189,9 @@ export default function ParashaView({
       window.history.replaceState(window.history.state, "", target.href);
     }
     window.addEventListener("scroll", onScroll, { passive: true });
+    content.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("scrollend", finishCommentaryScroll);
+    content.addEventListener("scrollend", finishCommentaryScroll);
     window.addEventListener("wheel", cancelCommentaryScroll, { passive: true });
     window.addEventListener("touchstart", cancelCommentaryScroll, { passive: true });
     window.addEventListener("keydown", cancelCommentaryScroll);
@@ -191,7 +199,9 @@ export default function ParashaView({
     return () => {
       cancelCommentaryScroll();
       window.removeEventListener("scroll", onScroll);
+      content.removeEventListener("scroll", onScroll);
       window.removeEventListener("scrollend", finishCommentaryScroll);
+      content.removeEventListener("scrollend", finishCommentaryScroll);
       window.removeEventListener("wheel", cancelCommentaryScroll);
       window.removeEventListener("touchstart", cancelCommentaryScroll);
       window.removeEventListener("keydown", cancelCommentaryScroll);
@@ -283,7 +293,7 @@ export default function ParashaView({
           ))}
         </nav>
       )}
-      <div className="content">
+      <div ref={contentRef} className="content reader-content" role="region" aria-label="Tóraszöveg" tabIndex={0}>
         <BilingualTable rows={rows} />
       </div>
       <CommentaryPanel

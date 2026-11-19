@@ -21,11 +21,9 @@ export default function TopControls() {
         setChapterLabel(null);
         return;
       }
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
       let best: Element | null = null;
       headings.forEach((h) => {
-        const top = h.getBoundingClientRect().top + scrollTop;
-        if (top - 120 <= scrollTop) best = h;
+        if (h.getBoundingClientRect().top <= 120) best = h;
       });
       setChapterLabel(best ? (best as HTMLElement).textContent : null);
     }
@@ -34,10 +32,15 @@ export default function TopControls() {
       update();
     }
     window.addEventListener("scroll", update, { passive: true });
+    function onElementScroll(event: Event) {
+      if (event.target instanceof Element && event.target.classList.contains("reader-content")) update();
+    }
+    document.addEventListener("scroll", onElementScroll, { capture: true, passive: true });
     window.addEventListener("resize", onResize);
     update();
     return () => {
       window.removeEventListener("scroll", update);
+      document.removeEventListener("scroll", onElementScroll, true);
       window.removeEventListener("resize", onResize);
     };
   }, [collapsed]);

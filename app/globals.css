@@ -38,10 +38,12 @@ body{
 
 /* thin scrollbars, sidebar/panel */
 #sidebar::-webkit-scrollbar,
+.reader-content::-webkit-scrollbar,
 .commentary-container::-webkit-scrollbar{ width:8px; }
 #sidebar::-webkit-scrollbar-thumb,
+.reader-content::-webkit-scrollbar-thumb,
 .commentary-container::-webkit-scrollbar-thumb{ background:var(--ink-line); border-radius:8px; }
-#sidebar, .commentary-container{ scrollbar-width:thin; scrollbar-color:var(--ink-line) transparent; }
+#sidebar, .reader-content, .commentary-container{ scrollbar-width:thin; scrollbar-color:var(--ink-line) transparent; }
 
 a{ color:inherit; text-decoration:none; }
 
@@ -268,6 +270,16 @@ body.panels-collapsed #chapter-bar{ left:70px; right:20px; }
     display:flex;
     justify-content:center;
     transition:margin .25s ease;
+}
+
+@media (min-width:981px){
+    .reader-content{
+        height:100vh;
+        min-height:0;
+        overflow-y:auto;
+        scrollbar-gutter:stable;
+    }
+    .commentary-container{ scrollbar-gutter:stable; }
 }
 
 .content.bookmarks{
