@@ -56,6 +56,10 @@ def parse(ref: str) -> tuple[str, str]:
     return f"{book}.{ch}.{v}", f"{book} {ch}:{v}"
 
 
+from source_reader import SOURCE_LINK_SCRIPT, router as source_reader_router  # noqa: E402
+app.include_router(source_reader_router(OUT, parse))
+
+
 # Dark site theme (see app/globals.css), injected into the map page when it is served.
 # --font-* are provided by the embedding page (components/QuestionMap.tsx); the fallbacks are for standalone use.
 THEME = """<style>
@@ -229,6 +233,6 @@ async def get_html(ref: str):
     from bookmark_frame import BOOKMARK_SCRIPT
     page = page.replace("</head>", THEME + "</head>", 1)
     return HTMLResponse(
-        page.replace("</body>", BOOKMARK_SCRIPT + "</body>", 1),
+        page.replace("</body>", SOURCE_LINK_SCRIPT + BOOKMARK_SCRIPT + "</body>", 1),
         headers={"Content-Security-Policy": "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox"},
     )
