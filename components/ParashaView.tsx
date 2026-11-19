@@ -46,6 +46,7 @@ export default function ParashaView({
   const [panelTab, setPanelTab] = useState<"questions" | "commentaries" | "rashi">("questions");
   const [selectedCommentary, setSelectedCommentary] = useState<string>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const commentaryScrollRef = useRef<{ href: string; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   // Verses that already have an AI summary: loaded once, then extended whenever a map finishes.
   useEffect(() => {
@@ -159,6 +160,7 @@ export default function ParashaView({
       const { chapter, verse } = current.dataset;
       if (headingChapter === null && chapter) setCurrentChapter(Number(chapter));
       if (!chapter || !verse) return;
+      if (commentaryScrollRef.current) return;
       const href = `/${encodeURIComponent(slug)}/${chapter}/${verse}`;
       if (window.location.pathname !== href) {
         window.history.replaceState(window.history.state, "", href);
@@ -169,8 +171,32 @@ export default function ParashaView({
       ticking = true;
       requestAnimationFrame(updateFromScroll);
     }
+    function cancelCommentaryScroll() {
+      if (!commentaryScrollRef.current) return;
+      clearTimeout(commentaryScrollRef.current.timer);
+      commentaryScrollRef.current = null;
+    }
+    function finishCommentaryScroll() {
+      const target = commentaryScrollRef.current;
+      if (!target) return;
+      cancelCommentaryScroll();
+      window.history.replaceState(window.history.state, "", target.href);
+    }
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener("scrollend", finishCommentaryScroll);
+    window.addEventListener("wheel", cancelCommentaryScroll, { passive: true });
+    window.addEventListener("touchstart", cancelCommentaryScroll, { passive: true });
+    window.addEventListener("keydown", cancelCommentaryScroll);
+    window.addEventListener("popstate", cancelCommentaryScroll);
+    return () => {
+      cancelCommentaryScroll();
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scrollend", finishCommentaryScroll);
+      window.removeEventListener("wheel", cancelCommentaryScroll);
+      window.removeEventListener("touchstart", cancelCommentaryScroll);
+      window.removeEventListener("keydown", cancelCommentaryScroll);
+      window.removeEventListener("popstate", cancelCommentaryScroll);
+    };
   }, [slug, rows]);
 
   function extractVerseKey(el: Element): string | null {
@@ -274,6 +300,19 @@ export default function ParashaView({
         tab={panelTab}
         onTabChange={setPanelTab}
         selectedCommentary={selectedCommentary}
+        onSelectVerse={(chapter, verse) => {
+          setSelectedCommentary(undefined);
+          const href = `/${encodeURIComponent(slug)}/${chapter}/${verse}`;
+          if (commentaryScrollRef.current) clearTimeout(commentaryScrollRef.current.timer);
+          const timer = setTimeout(() => {
+            if (commentaryScrollRef.current?.href !== href) return;
+            commentaryScrollRef.current = null;
+            window.history.replaceState(window.history.state, "", href);
+          }, 8000);
+          commentaryScrollRef.current = { href, timer };
+          window.history.pushState(null, "", href);
+          activateVerse(chapter, verse, true);
+        }}
       />
     </div>
   );

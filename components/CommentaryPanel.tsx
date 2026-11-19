@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CommentaryEntry } from "@/lib/types";
 import QuestionMap from "./QuestionMap";
 import RashiText from "./RashiText";
@@ -26,6 +26,7 @@ export default function CommentaryPanel({
   tab,
   onTabChange,
   selectedCommentary,
+  onSelectVerse,
 }: {
   parasha: string;
   open: boolean;
@@ -40,13 +41,23 @@ export default function CommentaryPanel({
   tab: PanelTab;
   onTabChange: (tab: PanelTab) => void;
   selectedCommentary?: string;
+  onSelectVerse: (chapter: number, verse: number) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; moved: boolean } | null>(null);
   const ignoreNextClickRef = useRef(false);
+  const [showAll, setShowAll] = useState(false);
   const relevantCommentaries = commentaries.filter((c) =>
     c.verses.some((v) => v.chapter === activeInfo?.chapter && v.verse === activeInfo?.verse)
   );
+  const allCommentaries = [...commentaries].sort((a, b) => {
+    const first = (entry: CommentaryEntry) =>
+      [...entry.verses].sort((x, y) => x.chapter - y.chapter || x.verse - y.verse)[0];
+    const aFirst = first(a), bFirst = first(b);
+    if (!aFirst) return bFirst ? 1 : 0;
+    if (!bFirst) return -1;
+    return aFirst.chapter - bFirst.chapter || aFirst.verse - bFirst.verse;
+  });
 
   useEffect(() => {
     if (open && tab === "commentaries" && selectedCommentary) {
@@ -168,14 +179,32 @@ export default function CommentaryPanel({
           </button>
         ))}
       </div>
-      {!activeInfo && <div className="panel-empty"><div className="seal">א</div>Kattints egy pászukra a kapcsolódó tartalomhoz.</div>}
+      {!activeInfo && tab !== "commentaries" && <div className="panel-empty"><div className="seal">א</div>Kattints egy pászukra a kapcsolódó tartalomhoz.</div>}
       <div id="panel-questions" role="tabpanel" aria-labelledby="tab-questions" hidden={tab !== "questions" || !activeInfo}>
         {mapRef && <QuestionMap parasha={parasha} mapRef={mapRef} onDone={onMapDone} bookmarkTarget={bookmarkTarget} />}
       </div>
-      <div id="panel-commentaries" role="tabpanel" aria-labelledby="tab-commentaries" hidden={tab !== "commentaries" || !activeInfo}>
-        {relevantCommentaries.length ? relevantCommentaries.map((c) => (
-          <article key={c.id} id={`commentary-${c.id}`} className="commentary commentary-note" dangerouslySetInnerHTML={{ __html: c.html }} />
-        )) : <p className="panel-message">Ehhez a pászukhoz még nincs kommentár.</p>}
+      <div id="panel-commentaries" role="tabpanel" aria-labelledby="tab-commentaries" hidden={tab !== "commentaries"}>
+        <button type="button" className="commentary-toggle" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
+          {showAll ? "Csak a kiválasztott pászuk kommentárjai" : "Összes kommentár mutatása"}
+        </button>
+        {!showAll && !activeInfo ? <p className="panel-message">Kattints egy pászukra, vagy mutasd az összes kommentárt.</p> :
+          (showAll ? allCommentaries : relevantCommentaries).length ?
+            (showAll ? allCommentaries : relevantCommentaries).map((c) => (
+              <article key={c.id} id={`commentary-${c.id}`} className="commentary commentary-note">
+                {showAll && c.verses.length > 0 && (
+                  <div className="commentary-verse-links" aria-label="Ugrás a kommentár pászukához">
+                    <span>Ugrás:</span>
+                    {[...c.verses].sort((a, b) => a.chapter - b.chapter || a.verse - b.verse).map((v) => (
+                      <button key={`${v.chapter}:${v.verse}`} type="button" onClick={() => onSelectVerse(v.chapter, v.verse)}
+                        aria-label={`Ugrás a(z) ${v.chapter}:${v.verse} pászukhoz`}>
+                        {v.chapter}:{v.verse}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div dangerouslySetInnerHTML={{ __html: c.html }} />
+              </article>
+            )) : <p className="panel-message">{showAll ? "Ehhez a hetiszakaszhoz még nincs kommentár." : "Ehhez a pászukhoz még nincs kommentár."}</p>}
       </div>
       <div id="panel-rashi" role="tabpanel" aria-labelledby="tab-rashi" hidden={tab !== "rashi" || !activeInfo}>
         {tab === "rashi" && activeInfo?.book && <RashiText book={activeInfo.book} chapter={activeInfo.chapter} verse={activeInfo.verse} />}

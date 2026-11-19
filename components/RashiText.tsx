@@ -13,6 +13,13 @@ export default function RashiText({ book, chapter, verse }: { book: string; chap
     const url = `https://www.sefaria.org/api/v3/texts/Rashi_on_${ref}?version=hebrew`;
     fetch(url, { signal: controller.signal })
       .then(async (response) => {
+        if (response.status === 404) {
+          const data = await response.json();
+          if (data.error === `We have no text for Rashi on ${book} ${chapter}:${verse}.`) {
+            setResult({ ref, passages: [] });
+            return;
+          }
+        }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         if (!Array.isArray(data.versions)) throw new Error("Érvénytelen Sefaria-válasz");
@@ -29,7 +36,7 @@ export default function RashiText({ book, chapter, verse }: { book: string; chap
         if (!controller.signal.aborted) setResult({ ref, error: `A Rási-szöveg nem tölthető be: ${error.message}` });
       });
     return () => controller.abort();
-  }, [ref]);
+  }, [book, chapter, ref, verse]);
 
   if (result?.ref !== ref) return <p className="panel-message" role="status">Rási betöltése…</p>;
   if (result.error) return <p className="qmap-error" role="alert">{result.error}</p>;
