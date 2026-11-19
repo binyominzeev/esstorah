@@ -19,8 +19,13 @@ The frontend uses `/api` (nginx proxy, see `deploy/`); override with `NEXT_PUBLI
 The question-map source links open a separate reader. It retrieves the exact linked
 Hebrew/Aramaic source from Sefaria and translates it into Hungarian on the server
 using the existing LLM configuration in `meforshim/.env`. The translation is
-identified as AI-generated and cached under `MEFORSHIM_OUT` by source text and
-model. `SOURCE_TRANSLATION_MODEL` selects an `llm.py` model (default: `gpt-6-luna`);
+identified as AI-generated. Hebrew text and navigation data are cached under
+`MEFORSHIM_OUT` per map and reference; translations are cached by reference, source
+text and model. Reopening a cached source does not require Sefaria or the model.
+The reader's previous/next buttons follow Sefaria's neighboring commentary segments
+and sections. To refresh a saved source, remove its entry from that map's
+`source-texts` directory; a changed text will receive a new translation.
+`SOURCE_TRANSLATION_MODEL` selects an `llm.py` model (default: `gpt-6-luna`);
 `MAX_SOURCE_TRANSLATIONS_PER_DAY` limits new translation attempts per API process
 (default: 200). Existing cached translations do not count against this limit.
 The source must appear in the latest question-map result. The API process needs

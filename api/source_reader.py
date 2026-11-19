@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -22,6 +23,7 @@ MAX_TEXT_CHARS = 12000
 MAX_TRANSLATIONS_PER_DAY = int(os.environ.get("MAX_SOURCE_TRANSLATIONS_PER_DAY", "200"))
 MODEL = os.environ.get("SOURCE_TRANSLATION_MODEL", "gpt-6-luna")
 translation_locks = [asyncio.Lock() for _ in range(32)]
+source_locks = [asyncio.Lock() for _ in range(32)]
 translation_slots = asyncio.Semaphore(2)
 started: list[float] = []
 
@@ -50,11 +52,17 @@ section{border:1px solid #2b2f3c;border-radius:10px;padding:18px;min-width:0}
 .he{font:1.35rem/1.9 Georgia,serif;direction:rtl;text-align:right}
 .note{color:#a6a693;font-size:.9rem}a,button{color:#e0bc63}
 button{background:transparent;border:1px solid #8a7038;border-radius:7px;padding:7px 12px;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+.navigation{display:flex;gap:10px;margin:0 0 18px}
 [hidden]{display:none}
 @media(max-width:700px){.columns{grid-template-columns:1fr}main{padding:16px}}
 </style></head><body><main>
 <h1 id="title">Forrásolvasó</h1>
 <p class="note">Eredeti szöveg: <a id="sefaria" target="_blank" rel="noopener noreferrer">Sefaria</a>.</p>
+<nav class="navigation" aria-label="Forrásszakaszok">
+<button id="prev" type="button" disabled>← Előző szakasz</button>
+<button id="next" type="button" disabled>Következő szakasz →</button>
+</nav>
 <div class="columns">
 <section><h2>Eredeti héber szöveg</h2><p id="he" class="text he" lang="he" role="status">Forrás betöltése…</p></section>
 <section><h2>Magyar fordítás</h2><p class="note">AI által készített fordítás, tévedéseket tartalmazhat.</p>
@@ -63,6 +71,7 @@ button{background:transparent;border:1px solid #8a7038;border-radius:7px;padding
 </div></main>
 <script>
 const ref = new URL(location.href).searchParams.get('ref') || '';
+const path = new URL(location.href).searchParams.get('path') || '';
 const he = document.getElementById('he'), translation = document.getElementById('translation');
 const retry = document.getElementById('retry');
 let sourceHash = '';
@@ -94,6 +103,18 @@ retry.onclick = translate;
 request('text', 'GET').then(data => {
   he.textContent = data.text;
   sourceHash = data.hash;
+  document.getElementById('title').textContent = data.ref;
+  document.getElementById('sefaria').href = 'https://www.sefaria.org/' + encodeURIComponent(data.ref.replace(/ /g, '_'));
+  for (const [id, direction] of [['prev', 'p'], ['next', 'n']]) {
+    const button = document.getElementById(id);
+    const retrace = path && data[id] && data[id] === data.back_ref;
+    button.disabled = !data[id] || (path.length >= 100 && !retrace);
+    button.onclick = () => {
+      const url = new URL(location.href);
+      url.searchParams.set('path', retrace ? path.slice(0, -1) : path + direction);
+      location.href = url.href;
+    };
+  }
   translate();
 }).catch(error => {
   he.textContent = error.message || 'A forrás betöltése nem sikerült.';
@@ -120,7 +141,7 @@ def allowed_ref(out: Path, dot: str, ref: str) -> bool:
     return False
 
 
-async def fetch_text(ref: str) -> str:
+async def sefaria_response(ref: str) -> dict:
     url = f"{sefaria.API}/v3/texts/{quote(ref, safe='')}?version=hebrew"
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
@@ -133,6 +154,10 @@ async def fetch_text(ref: str) -> str:
     if not isinstance(data, dict) or not isinstance(data.get("versions", []), list):
         log.error("Invalid Sefaria response for %s", ref)
         raise HTTPException(502, "A Sefaria válasza érvénytelen.")
+    return data
+
+
+def hebrew_text(data: dict) -> str:
     for version in data.get("versions", []):
         if isinstance(version, dict):
             if version.get("language") not in (None, "he", "hebrew"):
@@ -141,11 +166,75 @@ async def fetch_text(ref: str) -> str:
             text = clean.clean_text(raw, keep_nikud=True)
             if re.search(r"[\u05d0-\u05ea]", text):
                 return text
-    raise HTTPException(404, "Ehhez a hivatkozáshoz nem érhető el héber szöveg a Sefarián.")
+    return ""
+
+
+async def fetch_text(ref: str) -> dict:
+    data = await sefaria_response(ref)
+    text = hebrew_text(data)
+    if not text:
+        raise HTTPException(404, "Ehhez a hivatkozáshoz nem érhető el héber szöveg a Sefarián.")
+    previous, following = data.get("prev"), data.get("next")
+    sections, ends = data.get("sections"), data.get("toSections")
+    section_ref = data.get("sectionRef")
+    if (isinstance(sections, list) and sections == ends and
+            len(sections) == data.get("textDepth") and sections and
+            str(sections[-1]).isdigit() and isinstance(section_ref, str)):
+        section = await sefaria_response(section_ref)
+        index = int(sections[-1])
+        for version in section.get("versions", []):
+            if isinstance(version, dict) and version.get("language") in (None, "he", "hebrew"):
+                segments = version.get("text")
+                if isinstance(segments, list):
+                    for i in range(min(index - 2, len(segments) - 1), -1, -1):
+                        if hebrew_text({"versions": [{"text": segments[i]}]}):
+                            previous = f"{section_ref}:{i + 1}"
+                            break
+                    for i in range(index, len(segments)):
+                        if hebrew_text({"versions": [{"text": segments[i]}]}):
+                            following = f"{section_ref}:{i + 1}"
+                            break
+                    break
+    return {"ref": data.get("ref", ref), "text": text,
+            "prev": previous if isinstance(previous, str) else None,
+            "next": following if isinstance(following, str) else None}
 
 
 def source_hash(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def save_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as file:
+        temporary = Path(file.name)
+        try:
+            json.dump(data, file, ensure_ascii=False)
+            file.flush()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+async def cached_source(out: Path, dot: str, ref: str) -> dict:
+    key = hashlib.sha256(ref.encode("utf-8")).hexdigest()
+    path = out / dot / "source-texts" / f"{key}.json"
+    async with source_locks[int(key[:8], 16) % len(source_locks)]:
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if (isinstance(data, dict) and isinstance(data.get("ref"), str) and
+                        isinstance(data.get("text"), str) and data["text"].strip() and
+                        all(k in data and (data[k] is None or isinstance(data[k], str))
+                            for k in ("prev", "next"))):
+                    return data
+                raise ValueError("Invalid cached source")
+            data = await fetch_text(ref)
+            save_json(path, data)
+            return data
+        except (OSError, ValueError, TypeError):
+            log.exception("Could not read or save source for %s", ref)
+            raise HTTPException(500, "A forrás gyorsítótára nem olvasható vagy nem menthető.")
 
 
 def router(out: Path, parse) -> APIRouter:
@@ -157,8 +246,20 @@ def router(out: Path, parse) -> APIRouter:
             raise HTTPException(404, "Ez a forrás nem található a kérdés-térképen.")
         return dot
 
+    async def resolve(dot: str, ref: str, path: str) -> tuple[dict, str | None]:
+        source = await cached_source(out, dot, ref)
+        back_ref = None
+        for direction in path:
+            back_ref = source["ref"]
+            ref = source["prev" if direction == "p" else "next"]
+            if not ref:
+                raise HTTPException(404, "Nincs további forrásszakasz ebben az irányban.")
+            source = await cached_source(out, dot, ref)
+        return source, back_ref
+
     @routes.get("/api/map/{map_ref}/source", response_class=HTMLResponse)
-    async def page(map_ref: str, ref: str = Query(min_length=1, max_length=500)):
+    async def page(map_ref: str, ref: str = Query(min_length=1, max_length=500),
+                   path: str = Query(default="", max_length=100, pattern="^[pn]*$")):
         check(map_ref, ref)
         return HTMLResponse(PAGE, headers={
             "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
@@ -166,18 +267,21 @@ def router(out: Path, parse) -> APIRouter:
         })
 
     @routes.get("/api/map/{map_ref}/source/text")
-    async def text(map_ref: str, ref: str = Query(min_length=1, max_length=500)):
-        check(map_ref, ref)
-        source = await fetch_text(ref)
-        return {"text": source, "hash": source_hash(source)}
+    async def text(map_ref: str, ref: str = Query(min_length=1, max_length=500),
+                   path: str = Query(default="", max_length=100, pattern="^[pn]*$")):
+        dot = check(map_ref, ref)
+        source, back_ref = await resolve(dot, ref, path)
+        return {**source, "hash": source_hash(source["text"]), "back_ref": back_ref}
 
     @routes.post("/api/map/{map_ref}/source/translation")
     async def translation(map_ref: str, ref: str = Query(min_length=1, max_length=500),
+                          path: str = Query(default="", max_length=100, pattern="^[pn]*$"),
                           x_source_reader: str = Header(default=""), x_source_hash: str = Header(default="")):
         if x_source_reader != "1":
             raise HTTPException(403, "Érvénytelen fordítási kérés.")
         dot = check(map_ref, ref)
-        source = await fetch_text(ref)
+        source_data, _ = await resolve(dot, ref, path)
+        ref, source = source_data["ref"], source_data["text"]
         if source_hash(source) != x_source_hash:
             raise HTTPException(409, "A forrás megváltozott. Frissítsd az oldalt a fordításhoz.")
         if len(source) > MAX_TEXT_CHARS:
@@ -217,10 +321,7 @@ def router(out: Path, parse) -> APIRouter:
                     raise HTTPException(502, "Az AI-fordítás nem sikerült, próbáld újra.")
             data = {"translation": translated.strip()}
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                temporary = path.with_suffix(".tmp")
-                temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-                temporary.replace(path)
+                save_json(path, data)
             except OSError:
                 log.exception("Could not save translation for %s", ref)
                 raise HTTPException(500, "A fordítás mentése nem sikerült.")

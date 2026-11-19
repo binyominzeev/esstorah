@@ -41,6 +41,9 @@ class SourceReaderTests(unittest.TestCase):
     def headers(self, text="בראשית"):
         return {"X-Source-Reader": "1", "X-Source-Hash": source_reader.source_hash(text)}
 
+    def source(self, text="בראשית", ref=None, previous=None, following=None):
+        return {"ref": ref or self.ref, "text": text, "prev": previous, "next": following}
+
     def test_only_linked_sources_are_available_and_page_is_safe(self):
         page = self.client.get(self.url, params={"ref": self.ref})
         self.assertEqual(page.status_code, 200)
@@ -49,20 +52,27 @@ class SourceReaderTests(unittest.TestCase):
         self.assertEqual(self.client.get(self.url, params={"ref": "Other 1:1"}).status_code, 200)
         self.assertEqual(self.client.get("/api/map/invalid/source", params={"ref": self.ref}).status_code, 404)
 
-    def test_translation_is_cached_and_invalidated_by_source_text(self):
+    def test_source_and_translation_are_cached_and_translation_tracks_source_text(self):
         result = SimpleNamespace(text='{"translation":"Kezdetben."}', error=None, truncated=False)
-        with patch.object(source_reader, "fetch_text", new=AsyncMock(side_effect=["בראשית", "בראשית", "חדש"])), \
+        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source())) as fetch, \
                 patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=result)) as complete:
-            for text in ["בראשית", "בראשית", "חדש"]:
+            for _ in range(2):
+                self.assertEqual(self.client.get(self.url + "/text", params={"ref": self.ref}).json()["text"], "בראשית")
                 response = self.client.post(self.url + "/translation", params={"ref": self.ref},
-                                            headers=self.headers(text))
+                                            headers=self.headers())
                 self.assertEqual(response.json(), {"translation": "Kezdetben."})
+            self.assertEqual(fetch.await_count, 1)
+            source_file = next(self.out.glob("**/source-texts/*.json"))
+            source_file.write_text(json.dumps(self.source("חדש")), encoding="utf-8")
+            response = self.client.post(self.url + "/translation", params={"ref": self.ref},
+                                        headers=self.headers("חדש"))
+            self.assertEqual(response.json(), {"translation": "Kezdetben."})
             self.assertEqual(complete.await_count, 2)
             self.assertEqual(complete.await_args_list[0].args[2], "בראשית")
 
     def test_rejects_missing_header_and_translation_failures(self):
         self.assertEqual(self.client.post(self.url + "/translation", params={"ref": self.ref}).status_code, 403)
-        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value="בראשית")), \
+        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source())), \
                 patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=SimpleNamespace(
                     text='{"translation":"fél"}', error=None, truncated=True))):
             response = self.client.post(self.url + "/translation", params={"ref": self.ref},
@@ -71,11 +81,12 @@ class SourceReaderTests(unittest.TestCase):
             self.assertFalse(list(self.out.glob("**/source-translations/*.json")))
 
     def test_limit_and_long_source(self):
-        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value="א" * (source_reader.MAX_TEXT_CHARS + 1))):
+        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source("א" * (source_reader.MAX_TEXT_CHARS + 1)))):
             response = self.client.post(self.url + "/translation", params={"ref": self.ref},
                                         headers=self.headers("א" * (source_reader.MAX_TEXT_CHARS + 1)))
             self.assertEqual(response.status_code, 413)
-        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value="בראשית")), \
+        next(self.out.glob("**/source-texts/*.json")).unlink()
+        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source())), \
                 patch.object(source_reader, "MAX_TRANSLATIONS_PER_DAY", 0):
             response = self.client.post(self.url + "/translation", params={"ref": self.ref},
                                         headers=self.headers())
@@ -90,7 +101,7 @@ class SourceReaderTests(unittest.TestCase):
             client.return_value.__aenter__.return_value.get = AsyncMock(return_value=response)
             actual = self.client.get(self.url + "/text", params={"ref": self.ref})
             text = "בְּרֵאשִׁית\nדבר\nשני"
-            self.assertEqual(actual.json(), {"text": text, "hash": source_reader.source_hash(text)})
+            self.assertEqual(actual.json(), {**self.source(text), "hash": source_reader.source_hash(text), "back_ref": None})
             called_url = client.return_value.__aenter__.return_value.get.await_args.args[0]
             self.assertIn("Rashi%20on%20Genesis%201%3A1%3A1", called_url)
             self.assertIn("version=hebrew", called_url)
@@ -103,7 +114,7 @@ class SourceReaderTests(unittest.TestCase):
             self.assertEqual(self.client.get(self.url + "/text", params={"ref": self.ref}).status_code, 404)
 
     def test_changed_source_is_not_translated(self):
-        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value="חדש")), \
+        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source("חדש"))), \
                 patch.object(source_reader.llm, "complete", new=AsyncMock()) as complete:
             response = self.client.post(self.url + "/translation", params={"ref": self.ref}, headers=self.headers())
             self.assertEqual(response.status_code, 409)
@@ -115,7 +126,7 @@ class SourceReaderTests(unittest.TestCase):
                 await asyncio.sleep(0.02)
                 return SimpleNamespace(text='{"translation":"Kezdetben"}', error=None, truncated=False)
 
-            with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value="בראשית")), \
+            with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source())), \
                     patch.object(source_reader.llm, "complete", new=AsyncMock(side_effect=complete)) as model:
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app),
                                              base_url="http://test") as client:
@@ -127,6 +138,38 @@ class SourceReaderTests(unittest.TestCase):
                 self.assertEqual(model.await_count, 1)
 
         asyncio.run(run())
+
+    def test_navigation_follows_only_sefaria_neighbors_and_caches_them(self):
+        following = "Rashi on Genesis 1:1:2"
+        sources = {
+            self.ref: self.source(following=following),
+            following: self.source("המשך", following, previous=self.ref),
+        }
+        with patch.object(source_reader, "fetch_text", new=AsyncMock(side_effect=lambda ref: sources[ref])) as fetch, \
+                patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=SimpleNamespace(
+                    text='{"translation":"Folytatás"}', error=None, truncated=False))):
+            params = {"ref": self.ref, "path": "n"}
+            current = self.client.get(self.url + "/text", params=params).json()
+            self.assertEqual(current["ref"], following)
+            self.assertEqual(current["back_ref"], self.ref)
+            response = self.client.post(self.url + "/translation", params=params, headers=self.headers("המשך"))
+            self.assertEqual(response.json()["translation"], "Folytatás")
+            self.assertEqual(self.client.get(self.url + "/text", params={**params, "path": "np"}).json()["ref"], self.ref)
+            self.assertEqual(fetch.await_count, 2)
+            self.assertEqual(self.client.get(self.url + "/text", params={"ref": following}).status_code, 404)
+            self.assertEqual(self.client.get(self.url + "/text", params={**params, "path": "x"}).status_code, 422)
+            self.assertEqual(self.client.get(self.url + "/text", params={**params, "path": "nn"}).status_code, 404)
+
+    def test_navigation_uses_segments_before_section_neighbors(self):
+        segment = {"ref": self.ref, "sectionRef": "Rashi on Genesis 1:1",
+                   "sections": ["1", "1", "1"], "toSections": ["1", "1", "1"], "textDepth": 3,
+                   "prev": None, "next": "Rashi on Genesis 1:2",
+                   "versions": [{"language": "he", "text": "ראשון"}]}
+        section = {"versions": [{"language": "he", "text": ["ראשון", "", "שלישי"]}]}
+        with patch.object(source_reader, "sefaria_response", new=AsyncMock(side_effect=[segment, section])):
+            response = self.client.get(self.url + "/text", params={"ref": self.ref})
+        self.assertEqual(response.json()["next"], "Rashi on Genesis 1:1:3")
+        self.assertIsNone(response.json()["prev"])
 
     def test_served_map_includes_reader_links(self):
         with patch.object(server, "load_html", return_value="<html><head></head><body></body></html>"):
