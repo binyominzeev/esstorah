@@ -16,6 +16,19 @@ Endpoints: `GET/POST /api/map/Genesis.17.17` (status/start), `GET /api/map/Genes
 Env: `MAX_PARALLEL_JOBS` (2), `MAX_NEW_PER_DAY` (200), `MEFORSHIM_OUT`, `ALLOWED_ORIGINS` (dev CORS).
 The frontend uses `/api` (nginx proxy, see `deploy/`); override with `NEXT_PUBLIC_API_BASE`.
 
+The question-map source links open a separate reader. It retrieves the exact linked
+Hebrew/Aramaic source from Sefaria and translates it into Hungarian on the server
+using the existing LLM configuration in `meforshim/.env`. The translation is
+identified as AI-generated and cached under `MEFORSHIM_OUT` by source text and
+model. `SOURCE_TRANSLATION_MODEL` selects an `llm.py` model (default: `gpt-6-luna`);
+`MAX_SOURCE_TRANSLATIONS_PER_DAY` limits new translation attempts per API process
+(default: 200). Existing cached translations do not count against this limit.
+The source must appear in the latest question-map result. The API process needs
+write access to the output directory and network access to Sefaria and the model
+provider. The separate daily limit, like the map limit, resets on process restart.
+The translation request can take longer than map status polls; configure the
+proxy timeout as shown in `deploy/nginx.conf.sample` on existing deployments too.
+
 Production: run it with pm2 (`api/ecosystem.config.js`), see the root README.
 
 ## Pocket ID and bookmarks
