@@ -61,14 +61,24 @@ Import a Markdown file containing numbered level-two headings such as
 `## 1. 29:18–20 – Title` into an existing parasha in the vault:
 
 ```bash
-python3 content-sync/import_commentary.py vajece.md "/path/to/vault/1 Berésit/Vájécé" --map '6=29:30-31' --dry-run
-python3 content-sync/import_commentary.py vajece.md "/path/to/vault/1 Berésit/Vájécé" --map '6=29:30-31'
+python3 content-sync/import_commentary.py vajece.md --dry-run
+python3 content-sync/import_commentary.py vajece.md
 ```
+
+The importer reads `CONTENT_PATH` using Next.js's environment loading rules
+(the same configuration used by the app). It defaults to production mode, like
+`next build`; set `NODE_ENV=development` to use the `next dev` environment.
+It finds the parasha from a
+`Hetiszakasz: Vájecé` line, or from the filename if that line is absent,
+ignoring accents and case. If necessary use `--parasha 'Vájécé'` to specify
+the name, or pass the parasha directory as the second positional argument.
 
 Each numbered section becomes a separate `perusim/<source>-<number>.md` note.
 References in the heading, including same-chapter ranges, are expanded and
-checked against the parasha. Use `--map 'NUMBER=29:1,29:3-4'` to supply or
-override a section's references; missing or invalid references stop the import.
+checked against the parasha. A heading without a reference inherits all of the
+preceding section's references; the first section must specify a reference.
+Use `--map 'NUMBER=29:1,29:3-4'` to supply or override references. Invalid
+references stop the import.
 The introduction and unnumbered closing sections are not imported. Existing
 files are never overwritten. The notes use `mytorah-verses` frontmatter and
 are picked up by the normal Markdown content sync; rebuild the static site

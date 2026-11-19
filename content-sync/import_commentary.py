@@ -2,7 +2,9 @@
 """Import numbered Markdown sections into a parasha's perusim directory."""
 
 import argparse
+import json
 import re
+import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -10,6 +12,60 @@ from pathlib import Path
 
 HEADING = re.compile(r"^##\s+(\d+)\.\s+(.+?)\s*$", re.MULTILINE)
 REFERENCE = re.compile(r"(?<!\d)(\d+):(\d+)(?:\s*[-–—]\s*(\d+))?(?![\d:])")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def content_path():
+    script = (
+        "const {loadEnvConfig} = require('@next/env');"
+        "loadEnvConfig(process.cwd(), process.env.NODE_ENV === 'development');"
+        "process.stdout.write(JSON.stringify(process.env.CONTENT_PATH || ''));"
+    )
+    try:
+        result = subprocess.run(
+            ["node", "-e", script], cwd=PROJECT_ROOT, text=True,
+            capture_output=True, check=True,
+        )
+    except FileNotFoundError as error:
+        raise ValueError("A CONTENT_PATH beolvasásához Node.js szükséges.") from error
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"A Next.js környezetének beolvasása sikertelen: {error.stderr.strip()}") from error
+    value = json.loads(result.stdout)
+    if not value:
+        raise ValueError("A CONTENT_PATH nincs beállítva. Állítsd be a projekt .env.local fájljában.")
+    root = Path(value)
+    return root if root.is_absolute() else PROJECT_ROOT / root
+
+
+def normalize_name(name):
+    return re.sub(
+        r"[\s_-]+", " ",
+        "".join(ch for ch in unicodedata.normalize("NFD", name.casefold())
+                if not unicodedata.combining(ch)).strip(),
+    )
+
+
+def find_parasha(source, root, name=None):
+    if not root.is_dir():
+        raise ValueError(f"A CONTENT_PATH nem létező mappára mutat: {root}")
+    text = source.read_text(encoding="utf-8")
+    if name is None:
+        metadata = re.search(r"(?im)^\s*\*?\s*Hetiszakasz:\s*([^(\n·*]+)", text)
+        name = metadata.group(1).strip() if metadata else source.stem
+    key = normalize_name(name)
+    matches = [
+        parasha for book in root.iterdir()
+        if book.is_dir() and not book.name.startswith(".")
+        for parasha in book.iterdir()
+        if parasha.is_dir() and not parasha.name.startswith(".")
+        and normalize_name(parasha.name) == key
+        and (parasha / "HE.md").is_file() and (parasha / "HU.md").is_file()
+    ]
+    if not matches:
+        raise ValueError(f"Nem található a(z) {name!r} hetiszakasz a CONTENT_PATH mappában; add meg a nevét --parasha kapcsolóval.")
+    if len(matches) > 1:
+        raise ValueError(f"A(z) {name!r} hetiszakasz nem egyértelmű: {', '.join(map(str, matches))}. Add meg a mappa útvonalát.")
+    return matches[0]
 
 
 def parse_refs(text):
@@ -53,6 +109,7 @@ def import_notes(source, parasha, overrides, dry_run=False):
     directory = parasha / "perusim"
     outputs = []
     seen = set()
+    previous_refs = []
     for i, heading in enumerate(headings):
         number = int(heading[1])
         if number in seen:
@@ -66,37 +123,42 @@ def import_notes(source, parasha, overrides, dry_run=False):
             body = body[:unnumbered.start()]
         body = re.sub(r"\n\s*---\s*$", "", body).strip()
         refs = parse_refs(overrides[number] if number in overrides else heading[2])
+        inherited = not refs and number not in overrides
         if not refs:
-            raise ValueError(f"A(z) {number}. szakasznak nincs hivatkozása; add meg --map {number}=fejezet:vers formában.")
+            if not previous_refs or number in overrides:
+                raise ValueError(f"A(z) {number}. szakasznak nincs hivatkozása és nincs mit örökölnie; add meg --map {number}=fejezet:vers formában.")
+            refs = previous_refs
         if number in overrides and not re.fullmatch(r"\s*\d+:\d+(?:\s*[-–—]\s*\d+)?(?:\s*,\s*\d+:\d+(?:\s*[-–—]\s*\d+)?)*\s*", overrides[number]):
             raise ValueError(f"Érvénytelen --map érték: {overrides[number]}")
         missing = [f"{c}:{v}" for c, v in refs if (c, v) not in valid]
         if missing:
             raise ValueError(f"A(z) {number}. szakasz versei nem találhatók a hetiszakaszban: {', '.join(missing)}")
+        previous_refs = refs
         filename = directory / f"{slug}-{number:02d}.md"
         ref_list = ",".join(f"{c}:{v}" for c, v in refs)
         content = f'---\nmytorah-verses: "{ref_list}"\n---\n\n## {heading[2]}\n\n{body}\n'
-        outputs.append((filename, content, ref_list))
+        outputs.append((filename, content, ref_list, inherited))
     unused = set(overrides) - seen
     if unused:
         raise ValueError(f"Nem létező szakaszhoz adott --map: {', '.join(map(str, sorted(unused)))}")
-    existing = [str(file) for file, _, _ in outputs if file.exists()]
+    existing = [str(file) for file, _, _, _ in outputs if file.exists()]
     if existing:
         raise ValueError(f"A célfájlok már léteznek, nem írom felül őket: {', '.join(existing)}")
     if not dry_run:
         directory.mkdir(exist_ok=True)
-        for file, content, _ in outputs:
+        for file, content, _, _ in outputs:
             with file.open("x", encoding="utf-8") as handle:
                 handle.write(content)
-    for file, _, refs in outputs:
-        print(f"{'Előnézet' if dry_run else 'Importálva'}: {file} ({refs})")
+    for file, _, refs, inherited in outputs:
+        print(f"{'Előnézet' if dry_run else 'Importálva'}: {file} ({refs}{'; előző szakaszból örökölve' if inherited else ''})")
     print("A számozott szakaszokon kívüli bevezető és lezárás nem kerül importálásra.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="a számozott Markdown-jegyzet")
-    parser.add_argument("parasha", type=Path, help="a vault hetiszakasz-mappája")
+    parser.add_argument("parasha", type=Path, nargs="?", help="a hetiszakasz mappája (opcionális)")
+    parser.add_argument("--parasha", dest="parasha_name", help="a hetiszakasz neve, ha nem derül ki a jegyzetből")
     parser.add_argument("--map", action="append", default=[], metavar="SZÁM=FEJEZET:VERS",
                         help="szakasz vershivatkozásának megadása vagy felülírása")
     parser.add_argument("--dry-run", action="store_true", help="ellenőrzés írás nélkül")
@@ -108,7 +170,10 @@ def main():
             if not sep or not number.isdigit() or int(number) in overrides:
                 raise ValueError(f"Érvénytelen vagy ismétlődő --map: {item}")
             overrides[int(number)] = refs
-        import_notes(args.source, args.parasha, overrides, args.dry_run)
+        if args.parasha and args.parasha_name:
+            raise ValueError("A hetiszakasz útvonala és a --parasha együtt nem adható meg.")
+        parasha = args.parasha or find_parasha(args.source, content_path(), args.parasha_name)
+        import_notes(args.source, parasha, overrides, args.dry_run)
     except (OSError, ValueError) as error:
         print(f"Importálási hiba: {error}", file=sys.stderr)
         return 1
