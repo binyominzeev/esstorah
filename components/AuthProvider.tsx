@@ -22,12 +22,14 @@ export type BookmarkInput = Pick<Bookmark, "parasha" | "ref" | "kind" | "text">;
 type AuthContextValue = {
   ready: boolean;
   authenticated: boolean;
+  isAdmin: boolean;
   name: string;
   error: string;
   bookmarks: Bookmark[];
   login: () => Promise<void>;
   logout: () => void;
   toggleBookmark: (item: BookmarkInput) => Promise<void>;
+  request: (path: string, options?: RequestInit) => Promise<Response>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -97,6 +99,8 @@ async function initialize(): Promise<Tokens | null> {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [tokenRevision, setTokenRevision] = useState(0);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -114,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(REFRESH);
     localStorage.removeItem(USER_NAME);
     setAuthenticated(false);
+    setIsAdmin(false);
     setName("");
     setBookmarks([]);
   }, []);
@@ -130,6 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(ACCESS, access.current);
     setName(userName || "felhasználó");
     setAuthenticated(true);
+    setTokenRevision((revision) => revision + 1);
     return claims.exp;
   }, []);
 
@@ -146,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [applyTokens]);
 
   const request = useCallback(async (path: string, options: RequestInit = {}) => {
-    if (!access.current) throw new Error("Jelentkezz be a könyvjelzőkhöz.");
+    if (!access.current) throw new Error("Jelentkezz be.");
     const requestGeneration = generation.current;
     const send = (token: string) => fetch(`${API}${path}`, {
       ...options,
@@ -166,9 +172,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("A munkamenet lejárt; jelentkezz be újra.");
     }
     if (generation.current !== requestGeneration) throw new Error("A munkamenet megszűnt.");
-    if (!response.ok) throw new Error(`A könyvjelzők kérése sikertelen (${response.status}).`);
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw new Error(typeof detail?.detail === "string" ? detail.detail : `A kérés sikertelen (${response.status}).`);
+    }
     return response;
   }, [logout, refreshTokens]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    let active = true;
+    request("/auth/me")
+      .then((response) => response.json())
+      .then((data: { isAdmin: boolean }) => { if (active) setIsAdmin(data.isAdmin === true); })
+      .catch((err: Error) => { if (active) { setIsAdmin(false); setError(err.message); } });
+    return () => { active = false; };
+  }, [authenticated, request, tokenRevision]);
 
   const loadBookmarks = useCallback(async () => {
     const currentGeneration = generation.current;
@@ -236,7 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? location.pathname : `${location.pathname}${location.search}${location.hash}`);
       const params = new URLSearchParams({
         response_type: "code", client_id: config.clientId, redirect_uri: `${location.origin}/`,
-        scope: "openid profile email offline_access", state: verifier,
+        scope: "openid profile email groups offline_access", state: verifier,
         code_challenge: challenge, code_challenge_method: "S256",
       });
       location.assign(`${metadata.authorization_endpoint}?${params}`);
@@ -272,7 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [bookmarks, request]);
 
   return (
-    <AuthContext.Provider value={{ ready, authenticated, name, error, bookmarks, login, logout, toggleBookmark }}>
+    <AuthContext.Provider value={{ ready, authenticated, isAdmin, name, error, bookmarks, login, logout, toggleBookmark, request }}>
       {children}
     </AuthContext.Provider>
   );

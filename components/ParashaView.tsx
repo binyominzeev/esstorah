@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CommentaryEntry, RowData } from "@/lib/types";
+import { safeMarkdownToHtml } from "@/lib/safeMarkdown";
 import BilingualTable from "./BilingualTable";
 import CommentaryPanel from "./CommentaryPanel";
 
@@ -45,9 +46,36 @@ export default function ParashaView({
   const [bookmarkTarget, setBookmarkTarget] = useState<BookmarkTarget | undefined>();
   const [panelTab, setPanelTab] = useState<"questions" | "commentaries" | "rashi">("questions");
   const [selectedCommentary, setSelectedCommentary] = useState<string>();
+  const [liveCommentaries, setLiveCommentaries] = useState<CommentaryEntry[]>([]);
+  const [liveError, setLiveError] = useState("");
+  const allCommentaries = useMemo(
+    () => [...commentaries.filter((c) => !liveCommentaries.some((live) => live.id === c.id)), ...liveCommentaries],
+    [commentaries, liveCommentaries],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const commentaryScrollRef = useRef<{ href: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const api = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
+        const response = await fetch(`${api}/commentaries/${encodeURIComponent(slug)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data: { commentaries: { id: string; markdown: string; verses: CommentaryEntry["verses"] }[] } = await response.json();
+        if (active) {
+          setLiveCommentaries(data.commentaries.map((c) => ({ id: c.id, html: safeMarkdownToHtml(c.markdown), verses: c.verses })));
+          setLiveError("");
+        }
+      } catch {
+        if (active) setLiveError("A frissen feltöltött kommentárok nem tölthetők be.");
+      }
+    }
+    void load();
+    window.addEventListener("commentaries-uploaded", load);
+    return () => { active = false; window.removeEventListener("commentaries-uploaded", load); };
+  }, [slug]);
 
   // Verses that already have an AI summary: loaded once, then extended whenever a map finishes.
   useEffect(() => {
@@ -80,13 +108,13 @@ export default function ParashaView({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const refs = new Set(commentaries.flatMap((c) => c.verses.map((v) => `${v.chapter}:${v.verse}`)));
+    const refs = new Set(allCommentaries.flatMap((c) => c.verses.map((v) => `${v.chapter}:${v.verse}`)));
     container.querySelectorAll<HTMLElement>("[data-href][data-chapter][data-verse]").forEach((el) => {
       const hasCommentary = refs.has(`${el.dataset.chapter}:${el.dataset.verse}`);
       el.classList.toggle("has-commentary", hasCommentary);
       if (hasCommentary) el.title = "Ehhez a pászukhoz kommentár tartozik";
     });
-  }, [commentaries, rows]);
+  }, [commentaries, liveCommentaries, rows]);
 
   function goToChapter(chapter: number) {
     containerRef.current
@@ -305,7 +333,8 @@ export default function ParashaView({
         mapRef={mapRef}
         onMapDone={markAiDone}
         bookmarkTarget={bookmarkTarget}
-        commentaries={commentaries}
+        commentaries={allCommentaries}
+        liveError={liveError}
         activeInfo={activeInfo}
         tab={panelTab}
         onTabChange={setPanelTab}

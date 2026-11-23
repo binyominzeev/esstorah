@@ -32,6 +32,8 @@ def build_manifest(local_root):
         for filename in sorted(filenames):
             local_path = os.path.join(root, filename)
             relative_path = os.path.relpath(local_path, local_root).replace(os.sep, "/")
+            if os.path.basename(root) == "perusim" and filename.startswith("web-") and filename.endswith(".md"):
+                raise ValueError(f"Reserved web-upload filename cannot be synced from the local vault: {relative_path}")
             if not is_synced_file(relative_path):
                 continue
             digest = hashlib.sha256()

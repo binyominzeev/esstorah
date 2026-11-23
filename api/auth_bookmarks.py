@@ -55,6 +55,43 @@ def require_user(authorization: str = Header(default="")) -> str:
         raise HTTPException(401, "Érvénytelen vagy lejárt bejelentkezés.")
 
 
+async def admin_status(authorization: str = Header(default=""), user: str = Depends(require_user)) -> bool:
+    issuer, client_id, _, _ = settings()
+    token = authorization.split(None, 1)[1]
+    try:
+        key = jwks_for(issuer).get_signing_key_from_jwt(token)
+        jwt.decode(token, key.key, algorithms=["RS256", "ES256", "EdDSA"],
+                   issuer=issuer, audience=os.environ.get("OIDC_AUDIENCE") or client_id,
+                   options={"require": ["exp", "iss", "sub", "aud"]})
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(f"{issuer}/api/oidc/userinfo", headers={"Authorization": authorization})
+        if response.status_code in (401, 403):
+            raise HTTPException(401, "A bejelentkezés már nem érvényes.")
+        response.raise_for_status()
+        info = response.json()
+        if not isinstance(info, dict) or info.get("sub") != user:
+            raise HTTPException(502, "Érvénytelen válasz az azonosító szolgáltatástól.")
+        groups = info.get("groups", [])
+        if not isinstance(groups, list) or not all(isinstance(group, str) for group in groups):
+            raise HTTPException(502, "Érvénytelen csoportlista az azonosító szolgáltatástól.")
+        return "admins" in groups
+    except jwt.PyJWTError as exc:
+        raise HTTPException(401, "Érvénytelen hozzáférési token.") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(503, "Az adminjog ellenőrzése nem sikerült.") from exc
+
+
+async def require_admin(is_admin: bool = Depends(admin_status)):
+    if not is_admin:
+        raise HTTPException(403, "Adminisztrátori jogosultság szükséges.")
+
+
+@router.get("/auth/me")
+async def auth_me(response: Response, is_admin: bool = Depends(admin_status)):
+    response.headers["Cache-Control"] = "no-store"
+    return {"isAdmin": is_admin}
+
+
 @router.get("/auth/config")
 def auth_config():
     issuer, client_id, _, _ = settings()

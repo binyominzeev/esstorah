@@ -81,3 +81,30 @@ question or answer, the parasha and verse reference. They remain available
 even if a map is regenerated; updated text can be saved as a new bookmark.
 `GET/POST /api/bookmarks` and `DELETE /api/bookmarks/{id}` require a bearer
 access token.
+
+## Admin commentary upload
+
+The login requests the `groups` scope. Pocket ID returns group **names** in
+userinfo; create a group named exactly `admins` and add the uploaders to it.
+See [Pocket ID scopes and claims](https://pocket-id.org/docs/guides/scopes-and-claims).
+Existing sessions created before the scope was added must log out and back in.
+If the client uses custom claim mappings, ensure `groups` is released to
+userinfo. Every preview and upload verifies the access token's signature,
+issuer, expiry and audience (`OIDC_AUDIENCE`, or `OIDC_CLIENT_ID` by default),
+then asks Pocket ID's userinfo endpoint for the current groups and checks the
+subject. Userinfo must be reachable from the API server.
+
+The API resolves `CONTENT_PATH` with the same Next.js environment loading
+rules as the static build. Configure it for the API process, or use the
+project's `.env.local`; the API needs Node.js, installed Next.js dependencies,
+and read/write permission to that persistent directory. If `NODE_ENV` is set
+on the API, use the same value as for the build. Uploaded Markdown sections
+are written exclusively under the destination parasha's `perusim` as
+`web-*.md`, without overwriting existing files. The public live-commentary
+API exposes these notes immediately, without a build; a later build also
+includes them. The browser reports an error if the live feed is unavailable.
+
+This is server-side storage, not two-way vault sync: back up the server's
+content directory. Existing FTP sync does not download the web uploads, and
+reserves `perusim/web-*.md` to avoid overwriting them from a local vault.
+Rendered web-upload Markdown does not execute raw HTML or unsafe links.

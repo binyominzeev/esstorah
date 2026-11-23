@@ -20,6 +20,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from auth_bookmarks import router as auth_bookmarks_router
+from commentary_upload import router as commentary_upload_router
 
 ROOT = Path(__file__).resolve().parent.parent
 MEFORSHIM = ROOT / "meforshim"
@@ -33,6 +34,7 @@ import sefaria  # noqa: E402
 
 app = FastAPI(title="mytorah meforshim API", docs_url=None, redoc_url=None)
 app.include_router(auth_bookmarks_router, prefix="/api")
+app.include_router(commentary_upload_router, prefix="/api")
 if ALLOWED_ORIGINS:
     from fastapi.middleware.cors import CORSMiddleware
     app.add_middleware(

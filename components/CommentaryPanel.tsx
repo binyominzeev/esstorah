@@ -22,6 +22,7 @@ export default function CommentaryPanel({
   onMapDone,
   bookmarkTarget,
   commentaries,
+  liveError,
   activeInfo,
   tab,
   onTabChange,
@@ -37,6 +38,7 @@ export default function CommentaryPanel({
   onMapDone?: (ref: string) => void;
   bookmarkTarget?: { ref: string; kind: "question" | "answer"; text: string };
   commentaries: CommentaryEntry[];
+  liveError?: string;
   activeInfo?: { chapter: number; verse: number; book?: string };
   tab: PanelTab;
   onTabChange: (tab: PanelTab) => void;
@@ -194,6 +196,7 @@ export default function CommentaryPanel({
         {mapRef && <QuestionMap parasha={parasha} mapRef={mapRef} onDone={onMapDone} bookmarkTarget={bookmarkTarget} />}
       </div>
       <div id="panel-commentaries" role="tabpanel" aria-labelledby="tab-commentaries" hidden={tab !== "commentaries"}>
+        {liveError && <p className="qmap-error" role="alert">{liveError}</p>}
         <button type="button" className="commentary-toggle" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}>
           {showAll ? "Csak a kiválasztott pászuk kommentárjai" : "Összes kommentár mutatása"}
         </button>

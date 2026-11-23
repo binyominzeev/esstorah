@@ -45,13 +45,12 @@ def normalize_name(name):
     )
 
 
-def find_parasha(source, root, name=None):
+def find_parasha_text(text, filename, root, name=None):
     if not root.is_dir():
         raise ValueError(f"A CONTENT_PATH nem létező mappára mutat: {root}")
-    text = source.read_text(encoding="utf-8")
     if name is None:
         metadata = re.search(r"(?im)^\s*\*?\s*Hetiszakasz:\s*([^(\n·*]+)", text)
-        name = metadata.group(1).strip() if metadata else source.stem
+        name = metadata.group(1).strip() if metadata else Path(filename).stem
     key = normalize_name(name)
     matches = [
         parasha for book in root.iterdir()
@@ -66,6 +65,10 @@ def find_parasha(source, root, name=None):
     if len(matches) > 1:
         raise ValueError(f"A(z) {name!r} hetiszakasz nem egyértelmű: {', '.join(map(str, matches))}. Add meg a mappa útvonalát.")
     return matches[0]
+
+
+def find_parasha(source, root, name=None):
+    return find_parasha_text(source.read_text(encoding="utf-8"), source.name, root, name)
 
 
 def parse_refs(text):
@@ -94,15 +97,15 @@ def parasha_verses(parasha):
     return verses
 
 
-def import_notes(source, parasha, overrides, dry_run=False):
+def prepare_notes(text, filename, parasha, overrides):
     if not (parasha / "HE.md").is_file() or not (parasha / "HU.md").is_file():
         raise ValueError(f"Nem található HE.md és HU.md ebben a hetiszakaszban: {parasha}")
-    text = source.read_text(encoding="utf-8").replace("\r\n", "\n")
+    text = text.replace("\r\n", "\n")
     headings = list(HEADING.finditer(text))
     if not headings:
         raise ValueError("Nem találhatók számozott '## 1. fejezet:vers – cím' szakaszok.")
     valid = parasha_verses(parasha)
-    slug = unicodedata.normalize("NFKD", source.stem).encode("ascii", "ignore").decode().lower()
+    slug = unicodedata.normalize("NFKD", Path(filename).stem).encode("ascii", "ignore").decode().lower()
     slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
     if not slug:
         raise ValueError("A forrásfájl nevéből nem képezhető azonosító.")
@@ -137,19 +140,25 @@ def import_notes(source, parasha, overrides, dry_run=False):
         filename = directory / f"{slug}-{number:02d}.md"
         ref_list = ",".join(f"{c}:{v}" for c, v in refs)
         content = f'---\nmytorah-verses: "{ref_list}"\n---\n\n## {heading[2]}\n\n{body}\n'
-        outputs.append((filename, content, ref_list, inherited))
+        outputs.append((filename, content, ref_list, inherited, number))
     unused = set(overrides) - seen
     if unused:
         raise ValueError(f"Nem létező szakaszhoz adott --map: {', '.join(map(str, sorted(unused)))}")
-    existing = [str(file) for file, _, _, _ in outputs if file.exists()]
+    return outputs
+
+
+def import_notes(source, parasha, overrides, dry_run=False):
+    outputs = prepare_notes(source.read_text(encoding="utf-8"), source.name, parasha, overrides)
+    directory = parasha / "perusim"
+    existing = [str(file) for file, _, _, _, _ in outputs if file.exists()]
     if existing:
         raise ValueError(f"A célfájlok már léteznek, nem írom felül őket: {', '.join(existing)}")
     if not dry_run:
         directory.mkdir(exist_ok=True)
-        for file, content, _, _ in outputs:
+        for file, content, _, _, _ in outputs:
             with file.open("x", encoding="utf-8") as handle:
                 handle.write(content)
-    for file, _, refs, inherited in outputs:
+    for file, _, refs, inherited, _ in outputs:
         print(f"{'Előnézet' if dry_run else 'Importálva'}: {file} ({refs}{'; előző szakaszból örökölve' if inherited else ''})")
     print("A számozott szakaszokon kívüli bevezető és lezárás nem kerül importálásra.")
 

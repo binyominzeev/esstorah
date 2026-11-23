@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { markdownToHtml, removeCssClasses } from "./markdown";
+import { safeMarkdownToHtml } from "./safeMarkdown";
 import type { ChapterVerses, CommentaryEntry, NavBook, ParashaData, RowData } from "./types";
 
 const VAULT_PATH = process.env.CONTENT_PATH || "";
@@ -257,7 +258,10 @@ function collectCommentaries(
       if (!fs.existsSync(commentPath)) continue;
       let entry = out.get(id);
       if (!entry) {
-        entry = { id, html: markdownToHtml(removeCssClasses(readMarkdownFile(commentPath))), verses: [] };
+        const md = readMarkdownFile(commentPath);
+        const body = removeCssClasses(md);
+        const webUpload = /^---\n[\s\S]*?^mytorah-web: true$\n[\s\S]*?^---\n/m.test(md);
+        entry = { id, html: webUpload ? safeMarkdownToHtml(body) : markdownToHtml(body), verses: [] };
         out.set(id, entry);
       }
       if (!entry.verses.some((v) => v.chapter === chapter && v.verse === verse)) {
@@ -279,7 +283,12 @@ function collectImportedCommentaries(parashaPath: string, out: Map<string, Comme
     if (!refs) continue;
     let entry = out.get(id);
     if (!entry) {
-      entry = { id, html: markdownToHtml(md.slice(frontmatter![0].length), true), verses: [] };
+      const body = md.slice(frontmatter![0].length);
+      entry = {
+        id,
+        html: /^mytorah-web: true$/m.test(frontmatter![1]) ? safeMarkdownToHtml(body) : markdownToHtml(body, true),
+        verses: [],
+      };
       out.set(id, entry);
     }
     for (const ref of refs.split(",")) {

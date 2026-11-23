@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { NavBook } from "@/lib/types";
 import { useAuth } from "./AuthProvider";
+import CommentaryUpload from "./CommentaryUpload";
 
 export default function Sidebar({ nav }: { nav: NavBook[] }) {
   const pathname = usePathname();
@@ -13,7 +14,7 @@ export default function Sidebar({ nav }: { nav: NavBook[] }) {
   const [open, setOpen] = useState(false);
   const [openBooks, setOpenBooks] = useState<Set<string>>(new Set());
   const isFirstRender = useRef(true);
-  const { ready, authenticated, name, error, login, logout } = useAuth();
+  const { ready, authenticated, isAdmin, name, error, login, logout } = useAuth();
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -54,11 +55,14 @@ export default function Sidebar({ nav }: { nav: NavBook[] }) {
         </h2>
         <div className="auth-controls">
           {authenticated && <span>Üdv, {name}!</span>}
-          <button type="button" disabled={!ready} onClick={() => authenticated ? logout() : void login()}>
-            {authenticated ? "Kilépés" : "Belépés / regisztráció"}
-          </button>
+          <div className="auth-actions">
+            <button type="button" disabled={!ready} onClick={() => authenticated ? logout() : void login()}>
+              {authenticated ? "Kilépés" : "Belépés / regisztráció"}
+            </button>
+            <Link href={currentParasha ? `/bookmarks?parasha=${encodeURIComponent(activeSlug)}` : "/bookmarks"} onClick={() => setOpen(false)}>Könyvjelzőim</Link>
+            {isAdmin && <CommentaryUpload />}
+          </div>
           {error && <p role="alert">{error}</p>}
-          <Link href={currentParasha ? `/bookmarks?parasha=${encodeURIComponent(activeSlug)}` : "/bookmarks"} onClick={() => setOpen(false)}>Könyvjelzőim</Link>
         </div>
         <ul>
           {nav.map((book) => (

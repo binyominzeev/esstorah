@@ -85,6 +85,12 @@ files are never overwritten. The notes use `mytorah-verses` frontmatter and
 are picked up by the normal Markdown content sync; rebuild the static site
 after syncing. Imported notes do not modify the Torah text.
 
+Members of the Pocket ID `admins` group can also use **Feltöltés** in the
+sidebar to preview, select and edit Markdown sections before uploading. The
+uploaded notes appear immediately and are stored on the server, not synced
+back to the local vault. Configuration and backup details:
+[api/README.md](api/README.md#admin-commentary-upload).
+
 ## Build
 
 ```bash
