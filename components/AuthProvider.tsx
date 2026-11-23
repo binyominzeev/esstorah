@@ -8,6 +8,7 @@ const REFRESH = "esstorah.refreshToken";
 const USER_NAME = "esstorah.userName";
 const VERIFIER = "esstorah.pkceVerifier";
 const RETURN_PATH = "esstorah.returnPath";
+const AUTH_POPUP = "esstorah.authPopup";
 
 export type Bookmark = {
   id: number;
@@ -89,6 +90,12 @@ async function initialize(): Promise<Tokens | null> {
     if (tokens.refresh_token) localStorage.setItem(REFRESH, tokens.refresh_token);
     else localStorage.removeItem(REFRESH);
     localStorage.setItem(ACCESS, tokens.access_token);
+    const isAuthPopup = sessionStorage.getItem(AUTH_POPUP) === "true";
+    sessionStorage.removeItem(AUTH_POPUP);
+    if (isAuthPopup) {
+      window.close();
+      return null;
+    }
     location.replace(path?.startsWith("/") && !path.startsWith("//") ? path : "/");
     return null;
   }
@@ -104,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const authPopup = useRef<Window | null>(null);
   const access = useRef("");
   const refresh = useRef("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -206,10 +214,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await loadBookmarks();
       }
     }).catch((err: Error) => {
+      if (window.opener) {
+        window.opener.postMessage({ type: "esstorah-auth-error", error: err.message }, location.origin);
+        window.close();
+        return;
+      }
       setError(err.message);
       if (access.current && decode(access.current).exp! * 1000 <= Date.now()) logout();
     }).finally(() => setReady(true));
   }, [applyTokens, loadBookmarks, logout, refreshTokens]);
+
+  useEffect(() => {
+    function onAuthPopupMessage(event: MessageEvent<{ type?: string; error?: string }>) {
+      if (
+        event.origin !== location.origin ||
+        event.source !== authPopup.current ||
+        event.data?.type !== "esstorah-auth-error"
+      ) return;
+      authPopup.current = null;
+      setError(event.data.error || "A bejelentkezés nem sikerült.");
+    }
+    window.addEventListener("message", onAuthPopupMessage);
+    return () => window.removeEventListener("message", onAuthPopupMessage);
+  }, []);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -239,8 +266,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [authenticated, logout, refreshTokens]);
 
   const login = useCallback(async () => {
+    let popup: Window | null = null;
     try {
       setError("");
+      const width = 520;
+      const height = 720;
+      const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
+      const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
+      popup = window.open("about:blank", "_blank", `popup,width=${width},height=${height},left=${left},top=${top}`);
+      authPopup.current = popup;
       const response = await fetch(`${API}/auth/config`);
       if (!response.ok) throw new Error("A bejelentkezés nincs beállítva.");
       const config: { issuer: string; clientId: string } = await response.json();
@@ -249,17 +283,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const metadata: { authorization_endpoint: string } = await discovery.json();
       const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
       const challenge = base64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
-      sessionStorage.setItem(VERIFIER, verifier);
+      const authSession = popup ? popup.sessionStorage : sessionStorage;
+      authSession.setItem(VERIFIER, verifier);
+      if (popup) authSession.setItem(AUTH_POPUP, "true");
       const current = new URLSearchParams(location.search);
-      sessionStorage.setItem(RETURN_PATH, current.has("code") || current.has("error")
+      authSession.setItem(RETURN_PATH, current.has("code") || current.has("error")
         ? location.pathname : `${location.pathname}${location.search}${location.hash}`);
       const params = new URLSearchParams({
         response_type: "code", client_id: config.clientId, redirect_uri: `${location.origin}/`,
         scope: "openid profile email groups offline_access", state: verifier,
         code_challenge: challenge, code_challenge_method: "S256",
       });
-      location.assign(`${metadata.authorization_endpoint}?${params}`);
+      const authorizationUrl = `${metadata.authorization_endpoint}?${params}`;
+      if (popup) popup.location.assign(authorizationUrl);
+      else location.assign(authorizationUrl);
     } catch (err) {
+      if (popup && !popup.closed) popup.close();
+      if (authPopup.current === popup) authPopup.current = null;
       setError(err instanceof Error ? err.message : "A bejelentkezés nem sikerült.");
     }
   }, []);
