@@ -65,6 +65,10 @@ redirect and use that value in the API. Point `NEXT_PUBLIC_API_BASE` at the
 backend's `/api` URL (for example `http://localhost:8001/api`); set
 `ALLOWED_ORIGINS=http://localhost:3000` in the API. Without `ALLOWED_ORIGINS`
 cross-origin access is disabled; same-origin nginx proxying needs no CORS.
+Login opens Pocket ID in a popup and requests reauthentication (`prompt=login`);
+the callback returns its authorization result to the original window, which
+exchanges the code. If popups are blocked, login uses a full-page redirect.
+The popup must retain its opener across the provider redirect.
 
 The API verifies JWT signatures, issuer, expiry and subject against Pocket ID's
 JWKS. Set `OIDC_AUDIENCE` to the access-token audience when the provider issues
