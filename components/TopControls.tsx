@@ -11,6 +11,30 @@ export default function TopControls() {
     document.body.classList.toggle("panels-collapsed", collapsed);
   }, [collapsed]);
 
+  function togglePanels() {
+    const reader = document.querySelector<HTMLElement>(".reader-content");
+    const verse = reader?.querySelector<HTMLElement>("a.verse-link.active-verse");
+
+    if (reader && verse) {
+      const readerRect = reader.getBoundingClientRect();
+      const top = verse.getBoundingClientRect().top;
+      const targetTop = top >= readerRect.top + 60 && top <= readerRect.bottom - 40
+        ? top
+        : readerRect.top + readerRect.height / 2;
+
+      // Reflow once before restoring the verse; animating the reader width would move it repeatedly.
+      document.body.classList.add("anchoring-verse");
+      document.body.classList.toggle("panels-collapsed", !collapsed);
+      reader.scrollTo({
+        top: reader.scrollTop + verse.getBoundingClientRect().top - targetTop,
+        behavior: "instant",
+      });
+      document.body.classList.remove("anchoring-verse");
+    }
+
+    setCollapsed((c) => !c);
+  }
+
   useEffect(() => {
     function isMobile() {
       return window.innerWidth <= 980;
@@ -53,7 +77,7 @@ export default function TopControls() {
         aria-pressed={collapsed}
         aria-label={collapsed ? "Oldalsávok megnyitása" : "Oldalsávok becsukása"}
         title={collapsed ? "Oldalsávok megnyitása" : "Oldalsávok becsukása"}
-        onClick={() => setCollapsed((c) => !c)}
+        onClick={togglePanels}
       >
         {collapsed ? "›‹" : "‹›"}
       </button>

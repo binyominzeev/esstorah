@@ -460,6 +460,7 @@ body.panels-collapsed #chapter-bar{ left:70px; right:20px; }
 body.panels-collapsed #sidebar{ transform:translateX(-100%); }
 body.panels-collapsed .commentary-container{ transform:translateX(100%); }
 body.panels-collapsed .content{ margin-left:0; margin-right:0; }
+body.anchoring-verse .reader-content{ transition:none; }
 
 .bilingual-table{
     width:100%;
