@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 import auth_bookmarks
 import commentary_upload
+import import_commentary
 
 
 class UserInfoClient:
@@ -123,6 +124,24 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/admin/commentaries/preview", headers=self.headers(),
                                          json={**self.source, "filename": "../vajece.md"}).status_code, 422)
         self.assertFalse((self.parasha / "perusim").exists())
+
+    def test_preview_upload_and_feed_use_literal_env_without_node(self):
+        project = self.root / "project"
+        project.mkdir()
+        (project / ".env.local").write_text(f'CONTENT_PATH="{self.root}"\n', encoding="utf-8")
+        env = {"OIDC_ISSUER": "https://id.example", "OIDC_CLIENT_ID": "client", "OIDC_AUDIENCE": "client"}
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(import_commentary, "PROJECT_ROOT", project), \
+             patch.object(commentary_upload, "content_path", import_commentary.content_path), \
+             patch.object(import_commentary.subprocess, "run", side_effect=AssertionError("Node should not run")):
+            preview = self.client.post("/api/admin/commentaries/preview", headers=self.headers(), json=self.source)
+            self.assertEqual(preview.status_code, 200, preview.text)
+            payload = {**self.source, "selected": [{"number": 1, "markdown": "## Első\n\nSzöveg."}]}
+            upload = self.client.post("/api/admin/commentaries", headers=self.headers(), json=payload)
+            self.assertEqual(upload.status_code, 200, upload.text)
+            live = self.client.get("/api/commentaries/Vajece")
+            self.assertEqual(live.status_code, 200, live.text)
+            self.assertEqual(len(live.json()["commentaries"]), 1)
 
 
 if __name__ == "__main__":

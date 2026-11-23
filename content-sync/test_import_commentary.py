@@ -6,8 +6,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from import_commentary import find_parasha, import_notes
+import import_commentary
+from import_commentary import content_path, find_parasha, import_notes
 
 SCRIPT = Path(__file__).with_name("import_commentary.py")
 
@@ -114,6 +116,44 @@ class ImportCommentaryTests(unittest.TestCase):
         self.assertIn("előző szakaszból örökölve", result.stdout)
         self.assertIn('mytorah-verses: "29:1,29:2"',
                       (target / "perusim/notes-02.md").read_text(encoding="utf-8"))
+
+    def test_literal_content_path_needs_no_node_and_respects_precedence(self):
+        (self.root / ".env").write_text("CONTENT_PATH=/fallback\n", encoding="utf-8")
+        (self.root / ".env.local").write_text('CONTENT_PATH="/vault with spaces" # comment\n', encoding="utf-8")
+        (self.root / ".env.development.local").write_text("CONTENT_PATH=development\n", encoding="utf-8")
+        with patch.object(import_commentary, "PROJECT_ROOT", self.root), \
+             patch.dict(os.environ, {}, clear=True), \
+             patch.object(import_commentary.subprocess, "run", side_effect=AssertionError("Node should not run")):
+            self.assertEqual(content_path(), Path("/vault with spaces"))
+            os.environ["NODE_ENV"] = "development"
+            self.assertEqual(content_path(), self.root / "development")
+            os.environ["CONTENT_PATH"] = "/from-process"
+            self.assertEqual(content_path(), Path("/from-process"))
+            os.environ["CONTENT_PATH"] = ""
+            with self.assertRaisesRegex(ValueError, "nincs beállítva"):
+                content_path()
+
+    def test_complex_env_uses_next_and_reports_empty_stderr_failure(self):
+        (self.root / ".env.local").write_text("CONTENT_PATH=$VAULT/data\n", encoding="utf-8")
+        with patch.object(import_commentary, "PROJECT_ROOT", self.root), patch.dict(os.environ, {}, clear=True):
+            with patch.object(import_commentary.subprocess, "run",
+                              return_value=subprocess.CompletedProcess([], 0, stdout='"/expanded/data"', stderr="")):
+                self.assertEqual(content_path(), Path("/expanded/data"))
+            failure = subprocess.CalledProcessError(-9, ["node"], stderr="")
+            with patch.object(import_commentary.subprocess, "run", side_effect=failure):
+                with self.assertRaisesRegex(ValueError, r"kilépési kód: -9"):
+                    content_path()
+
+    def test_multiline_env_values_defer_to_next_parser(self):
+        (self.root / ".env.local").write_text(
+            'OTHER="first line\nCONTENT_PATH=/not-a-setting\nlast line"\nCONTENT_PATH=/correct\n',
+            encoding="utf-8",
+        )
+        with patch.object(import_commentary, "PROJECT_ROOT", self.root), patch.dict(os.environ, {}, clear=True), \
+             patch.object(import_commentary.subprocess, "run",
+                          return_value=subprocess.CompletedProcess([], 0, stdout='"/correct"', stderr="")) as run:
+            self.assertEqual(content_path(), Path("/correct"))
+            run.assert_called_once()
 
 
 if __name__ == "__main__":

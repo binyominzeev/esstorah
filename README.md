@@ -69,6 +69,8 @@ python3 content-sync/import_commentary.py vajece.md
 The importer reads `CONTENT_PATH` using Next.js's environment loading rules
 (the same configuration used by the app). It defaults to production mode, like
 `next build`; set `NODE_ENV=development` to use the `next dev` environment.
+Literal paths are read directly; variable expansion or complex `.env` syntax
+requires Node.js and the installed Next.js dependencies.
 It finds the parasha from a
 `Hetiszakasz: Vájecé` line, or from the filename if that line is absent,
 ignoring accents and case. If necessary use `--parasha 'Vájécé'` to specify

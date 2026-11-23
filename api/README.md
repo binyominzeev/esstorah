@@ -95,10 +95,12 @@ then asks Pocket ID's userinfo endpoint for the current groups and checks the
 subject. Userinfo must be reachable from the API server.
 
 The API resolves `CONTENT_PATH` with the same Next.js environment loading
-rules as the static build. Configure it for the API process, or use the
-project's `.env.local`; the API needs Node.js, installed Next.js dependencies,
-and read/write permission to that persistent directory. If `NODE_ENV` is set
-on the API, use the same value as for the build. Uploaded Markdown sections
+order as the static build. Configure it for the API process, or use the
+project's `.env.local`; the API needs read/write permission to that persistent
+directory. Literal paths need no Node.js subprocess; environment variable
+expansion and other complex `.env` syntax require Node.js and the installed
+Next.js dependencies. If `NODE_ENV` is set on the API, use the same value as
+for the build. Uploaded Markdown sections
 are written exclusively under the destination parasha's `perusim` as
 `web-*.md`, without overwriting existing files. The public live-commentary
 API exposes these notes immediately, without a build; a later build also

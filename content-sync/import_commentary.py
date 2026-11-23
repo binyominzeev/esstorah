@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -15,7 +16,50 @@ REFERENCE = re.compile(r"(?<!\d)(\d+):(\d+)(?:\s*[-–—]\s*(\d+))?(?![\d:])")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def literal_content_path():
+    if "CONTENT_PATH" in os.environ:
+        return os.environ["CONTENT_PATH"]
+    mode = "test" if os.environ.get("NODE_ENV") == "test" else (
+        "development" if os.environ.get("NODE_ENV") == "development" else "production"
+    )
+    files = [f".env.{mode}.local"]
+    if mode != "test":
+        files.append(".env.local")
+    files.extend([f".env.{mode}", ".env"])
+    assignment = re.compile(
+        r"""^\s*(?:export\s+)?CONTENT_PATH\s*=\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^#]*?))\s*(?:#.*)?$"""
+    )
+    for name in files:
+        env_file = PROJECT_ROOT / name
+        if not env_file.is_file():
+            continue
+        value = None
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            quoted = re.match(r"""^\s*(?:export\s+)?[\w.-]+(?:\s*=\s*|\s*:\s+)(['"`])""", line)
+            if quoted:
+                rest = line[quoted.end():]
+                if "\\" in rest or quoted.group(1) not in rest:
+                    return None
+            if not re.match(r"^\s*(?:export\s+)?CONTENT_PATH(?:\s*=|\s*:)", line):
+                continue
+            match = assignment.fullmatch(line)
+            if not match:
+                return None
+            value = next(group for group in match.groups() if group is not None)
+            if "$" in value or "\\" in value or (match.group(4) is not None and value.startswith(("'", '"', "`"))):
+                return None
+        if value is not None:
+            return value.strip() if match and match.group(4) is not None else value
+    return None
+
+
 def content_path():
+    value = literal_content_path()
+    if value is not None:
+        if not value:
+            raise ValueError("A CONTENT_PATH nincs beállítva. Állítsd be a projekt .env.local fájljában.")
+        root = Path(value)
+        return root if root.is_absolute() else PROJECT_ROOT / root
     script = (
         "const {loadEnvConfig} = require('@next/env');"
         "loadEnvConfig(process.cwd(), process.env.NODE_ENV === 'development');"
@@ -29,7 +73,10 @@ def content_path():
     except FileNotFoundError as error:
         raise ValueError("A CONTENT_PATH beolvasásához Node.js szükséges.") from error
     except subprocess.CalledProcessError as error:
-        raise ValueError(f"A Next.js környezetének beolvasása sikertelen: {error.stderr.strip()}") from error
+        raise ValueError(
+            f"A Next.js környezetének beolvasása sikertelen (kilépési kód: {error.returncode}). "
+            "Állítsd be a CONTENT_PATH értékét közvetlenül az API környezetében."
+        ) from error
     value = json.loads(result.stdout)
     if not value:
         raise ValueError("A CONTENT_PATH nincs beállítva. Állítsd be a projekt .env.local fájljában.")
