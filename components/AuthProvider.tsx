@@ -327,7 +327,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const params = new URLSearchParams({
         response_type: "code", client_id: config.clientId, redirect_uri: `${location.origin}/`,
         scope: "openid profile email groups offline_access", state: verifier,
-        code_challenge: challenge, code_challenge_method: "S256", prompt: "login",
+        code_challenge: challenge, code_challenge_method: "S256",
       });
       const authorizationUrl = `${metadata.authorization_endpoint}?${params}`;
       if (popup) popup.location.assign(authorizationUrl);
