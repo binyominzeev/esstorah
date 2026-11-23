@@ -49,6 +49,7 @@ export default function CommentaryPanel({
   const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; moved: boolean } | null>(null);
   const ignoreNextClickRef = useRef(false);
   const [showAll, setShowAll] = useState(false);
+  const [wideCommentaries, setWideCommentaries] = useState(false);
   const [titles, setTitles] = useState<Record<string, string>>({});
   const relevantCommentaries = commentaries.filter((c) =>
     c.verses.some((v) => v.chapter === activeInfo?.chapter && v.verse === activeInfo?.verse)
@@ -154,8 +155,13 @@ export default function CommentaryPanel({
     onClose();
   }
 
+  function handleTabChange(nextTab: PanelTab) {
+    if (nextTab !== "commentaries") setWideCommentaries(false);
+    onTabChange(nextTab);
+  }
+
   return (
-    <div ref={panelRef} className={open ? "commentary-container open" : "commentary-container"}>
+    <div ref={panelRef} className={`commentary-container${open ? " open" : ""}${wideCommentaries && tab === "commentaries" ? " commentary-wide" : ""}`}>
       <button
         type="button"
         className="panel-close"
@@ -174,22 +180,42 @@ export default function CommentaryPanel({
           <a id="sefaria-link" href={sefariaHref} target="_blank" rel="noreferrer">Sefaria ↗</a>
         </div>
       )}
-      <div className="panel-tabs" role="tablist" aria-label="Pászukhoz kapcsolódó tartalom">
-        {tabs.map((item, index) => (
-          <button key={item.id} id={`tab-${item.id}`} type="button" role="tab"
-            aria-selected={tab === item.id} aria-controls={`panel-${item.id}`}
-            tabIndex={tab === item.id ? 0 : -1}
-            onClick={() => onTabChange(item.id)}
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-              event.preventDefault();
-              const next = tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
-              onTabChange(next.id);
-              document.getElementById(`tab-${next.id}`)?.focus();
-            }}>
-            {item.label}{item.id === "commentaries" && relevantCommentaries.length > 0 && <span className="tab-count">{relevantCommentaries.length}</span>}
+      <div className="panel-tabs">
+        <div role="tablist" aria-label="Pászukhoz kapcsolódó tartalom">
+          {tabs.map((item, index) => (
+            <button key={item.id} id={`tab-${item.id}`} type="button" role="tab"
+              aria-selected={tab === item.id} aria-controls={`panel-${item.id}`}
+              tabIndex={tab === item.id ? 0 : -1}
+              onClick={() => handleTabChange(item.id)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                const next = tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+                handleTabChange(next.id);
+                document.getElementById(`tab-${next.id}`)?.focus();
+              }}>
+              {item.label}{item.id === "commentaries" && relevantCommentaries.length > 0 && <span className="tab-count">{relevantCommentaries.length}</span>}
+            </button>
+          ))}
+        </div>
+        {tab === "commentaries" && (
+          <button
+            type="button"
+            className="commentary-wide-toggle"
+            aria-label={wideCommentaries ? "Kommentárok teljes szélességének visszaállítása" : "Kommentárok teljes képernyőre"}
+            aria-pressed={wideCommentaries}
+            title={wideCommentaries ? "Teljes szélesség visszaállítása" : "Teljes képernyő"}
+            onClick={() => setWideCommentaries((wide) => !wide)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              {wideCommentaries ? (
+                <path d="M8 3v5H3m18 0h-5V3M3 16h5v5m8 0v-5h5" />
+              ) : (
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+              )}
+            </svg>
           </button>
-        ))}
+        )}
       </div>
       {!activeInfo && tab !== "commentaries" && <div className="panel-empty"><div className="seal">א</div>Kattints egy pászukra a kapcsolódó tartalomhoz.</div>}
       <div id="panel-questions" role="tabpanel" aria-labelledby="tab-questions" hidden={tab !== "questions" || !activeInfo}>
