@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 
-type Note = { number: number; refs: string; markdown: string; selected: boolean };
+type Note = { number: number; refs: string; markdown: string; selected: boolean; existing: boolean };
 type Preview = { parasha: string; book: string; notes: Note[] };
 
 export default function CommentaryUpload() {
@@ -15,6 +15,7 @@ export default function CommentaryUpload() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [overwriteConfirmed, setOverwriteConfirmed] = useState(false);
 
   useEffect(() => {
     return () => { if (dialogRef.current?.open) dialogRef.current.close(); };
@@ -25,6 +26,7 @@ export default function CommentaryUpload() {
     setMessage("");
     setPreview(undefined);
     setSource(undefined);
+    setOverwriteConfirmed(false);
     dialogRef.current?.showModal();
     setBusy(true);
     try {
@@ -54,10 +56,11 @@ export default function CommentaryUpload() {
       const selected = preview.notes.filter((note) => note.selected).map(({ number, markdown }) => ({ number, markdown }));
       const response = await request("/admin/commentaries", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...source, selected }),
+        body: JSON.stringify({ ...source, selected, overwrite: overwriteConfirmed }),
       });
       const result: { count: number; parasha: string } = await response.json();
       setPreview(undefined);
+      setOverwriteConfirmed(false);
       setMessage(`${result.count} kommentár feltöltve: ${result.parasha}.`);
       window.dispatchEvent(new Event("commentaries-uploaded"));
     } catch (err) {
@@ -68,8 +71,11 @@ export default function CommentaryUpload() {
   }
 
   function updateNote(number: number, patch: Partial<Note>) {
-    setPreview((current) => current && {
-      ...current, notes: current.notes.map((note) => note.number === number ? { ...note, ...patch } : note),
+    setPreview((current) => {
+      if (!current) return current;
+      const notes = current.notes.map((note) => note.number === number ? { ...note, ...patch } : note);
+      if (!notes.some((note) => note.selected && note.existing)) setOverwriteConfirmed(false);
+      return { ...current, notes };
     });
   }
 
@@ -94,12 +100,23 @@ export default function CommentaryUpload() {
           <>
             <p>Hetiszakasz: <strong>{preview.book} · {preview.parasha}</strong></p>
             <p>Válaszd ki és szükség esetén szerkeszd a kommentárokat. A vershivatkozások az eredeti fájlból származnak.</p>
+            {preview.notes.some((note) => note.selected && note.existing) && (
+              <div className="upload-overwrite-warning" role="alert">
+                <strong>Figyelem:</strong> a kijelölt kommentárok közül már létezik fájl.
+                <label>
+                  <input type="checkbox" checked={overwriteConfirmed} disabled={busy}
+                    onChange={(event) => setOverwriteConfirmed(event.target.checked)} />
+                  Meglévő kommentárok felülírásának jóváhagyása
+                </label>
+              </div>
+            )}
             <div className="upload-notes">
               {preview.notes.map((note) => (
                 <div className="upload-note" key={note.number}>
                   <label><input type="checkbox" checked={note.selected} disabled={busy}
                     onChange={(event) => updateNote(note.number, { selected: event.target.checked })} />
                     <span>{note.number}. {note.markdown.split("\n")[0].replace(/^##\s*/, "")} <small>({note.refs})</small></span>
+                    {note.existing && <small className="upload-existing"> — már létezik</small>}
                   </label>
                   <details>
                     <summary>Olvasás és szerkesztés</summary>
@@ -111,8 +128,12 @@ export default function CommentaryUpload() {
               ))}
             </div>
             <div className="upload-actions">
-              <button type="button" disabled={busy || !preview.notes.some((note) => note.selected)} onClick={() => void upload()}>
-                Kijelöltek feltöltése ({preview.notes.filter((note) => note.selected).length})
+              <button type="button" disabled={busy || !preview.notes.some((note) => note.selected)
+                || (preview.notes.some((note) => note.selected && note.existing) && !overwriteConfirmed)}
+                onClick={() => void upload()}>
+                {preview.notes.some((note) => note.selected && note.existing)
+                  ? "Meglévők felülírása és feltöltés"
+                  : `Kijelöltek feltöltése (${preview.notes.filter((note) => note.selected).length})`}
               </button>
               <button type="button" disabled={busy} onClick={() => dialogRef.current?.close()}>Mégse</button>
             </div>

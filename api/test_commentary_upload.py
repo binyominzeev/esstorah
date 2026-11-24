@@ -97,6 +97,7 @@ class UploadTests(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["parasha"], "Vájécé")
         self.assertEqual([n["refs"] for n in data["notes"]], ["29:1,29:2", "29:1,29:2"])
+        self.assertEqual([n["existing"] for n in data["notes"]], [False, False])
         payload = {**self.source, "selected": [{"number": 2, "markdown": "## Második\n\nSzerkesztett szöveg."}]}
         upload = self.client.post("/api/admin/commentaries", headers=self.headers(), json=payload)
         self.assertEqual(upload.status_code, 200, upload.text)
@@ -109,6 +110,14 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(live[0]["verses"], [{"chapter": 29, "verse": 1}, {"chapter": 29, "verse": 2}])
         self.assertEqual(self.client.post("/api/admin/commentaries", headers=self.headers(), json=payload).status_code, 422)
         self.assertIn("Szerkesztett szöveg.", saved.read_text(encoding="utf-8"))
+        overwritten = {**payload, "overwrite": True}
+        overwrite_upload = self.client.post("/api/admin/commentaries", headers=self.headers(), json=overwritten)
+        self.assertEqual(overwrite_upload.status_code, 200, overwrite_upload.text)
+        self.assertIn("Szerkesztett szöveg.", saved.read_text(encoding="utf-8"))
+        preview_again = self.client.post("/api/admin/commentaries/preview", headers=self.headers(), json=self.source)
+        self.assertEqual(preview_again.status_code, 200, preview_again.text)
+        existing = {n["number"]: n["existing"] for n in preview_again.json()["notes"]}
+        self.assertEqual(existing, {1: False, 2: True})
         conflict = {**self.source, "selected": [{"number": 1, "markdown": "## Első"},
                                                 {"number": 2, "markdown": "## Második"}]}
         self.assertEqual(self.client.post("/api/admin/commentaries", headers=self.headers(), json=conflict).status_code, 422)

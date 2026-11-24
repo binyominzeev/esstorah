@@ -195,6 +195,9 @@ body.panels-collapsed #chapter-bar{ left:70px; right:20px; }
 .upload-dialog button{ font:inherit; color:var(--gold-bright); background:var(--ink); border:1px solid var(--gold-dim); border-radius:6px; padding:7px 10px; cursor:pointer; }
 .upload-dialog button:disabled{ opacity:.5; cursor:default; }
 .upload-dialog .upload-error{ color:#d98c8c; }
+.upload-overwrite-warning{ margin:12px 0; padding:10px 12px; border:1px solid #d98c8c; border-radius:8px; }
+.upload-overwrite-warning label{ display:flex; align-items:flex-start; gap:8px; margin-top:8px; }
+.upload-note .upload-existing{ color:#d98c8c; }
 .upload-notes{ display:grid; gap:10px; }
 .upload-note{ border:1px solid var(--ink-line); border-radius:8px; padding:12px; }
 .upload-note > label{ display:flex; align-items:flex-start; gap:8px; font-weight:600; }

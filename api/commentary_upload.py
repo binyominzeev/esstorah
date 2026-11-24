@@ -2,6 +2,8 @@
 import re
 import sys
 import threading
+import os
+import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,6 +31,7 @@ class Selection(BaseModel):
 
 class Upload(Source):
     selected: list[Selection] = Field(min_length=1, max_length=500)
+    overwrite: bool = False
 
 
 def plan(source: Source):
@@ -48,12 +51,21 @@ def plan(source: Source):
 def preview(source: Source, _: None = Depends(require_admin)):
     try:
         parasha, notes = plan(source)
+        directory = parasha / "perusim"
+        def existing(file):
+            target = directory / f"web-{file.name}"
+            return target.exists() or target.is_symlink()
         return {
             "parasha": parasha.name,
             "book": parasha.parent.name,
             "notes": [
-                {"number": number, "refs": refs, "markdown": content.split("---\n\n", 1)[1]}
-                for _, content, refs, _, number in notes
+                {
+                    "number": number,
+                    "refs": refs,
+                    "markdown": content.split("---\n\n", 1)[1],
+                    "existing": existing(file),
+                }
+                for file, content, refs, _, number in notes
             ],
         }
     except (ValueError, OSError) as exc:
@@ -83,18 +95,35 @@ def upload(source: Upload, _: None = Depends(require_admin)):
             outputs.append((target, f'---\nmytorah-verses: "{refs}"\nmytorah-web: true\n---\n\n{markdown}\n'))
         with write_lock:
             directory.mkdir(exist_ok=True)
-            conflicts = [target.name for target, _ in outputs if target.exists() or target.is_symlink()]
+            unsafe = [target.name for target, _ in outputs if target.is_symlink()]
+            if unsafe:
+                raise ValueError(f"Érvénytelen meglévő szimbólikus hivatkozás: {', '.join(unsafe)}")
+            conflicts = [target.name for target, _ in outputs if target.exists()]
             if conflicts:
-                raise ValueError(f"A célfájlok már léteznek: {', '.join(conflicts)}")
+                if not source.overwrite:
+                    raise ValueError(f"A célfájlok már léteznek: {', '.join(conflicts)}")
+            backups = {}
             written = []
+            temp_files = []
             try:
                 for target, content in outputs:
-                    with target.open("x", encoding="utf-8") as handle:
-                        written.append(target)
+                    if target.exists() or target.is_symlink():
+                        backups[target] = target.read_bytes()
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", encoding="utf-8", dir=directory, prefix=".commentary-", delete=False
+                    ) as handle:
                         handle.write(content)
+                        temp_files.append(Path(handle.name))
+                    os.replace(temp_files[-1], target)
+                    written.append(target)
             except OSError:
                 for target in written:
-                    target.unlink(missing_ok=True)
+                    if target in backups:
+                        target.write_bytes(backups[target])
+                    else:
+                        target.unlink(missing_ok=True)
+                for temp in temp_files:
+                    temp.unlink(missing_ok=True)
                 raise
         return {"count": len(outputs), "parasha": parasha.name}
     except (ValueError, OSError) as exc:
