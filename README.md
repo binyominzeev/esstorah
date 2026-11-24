@@ -95,6 +95,10 @@ back to the local vault. Configuration and backup details:
 
 ## Build
 
+Inter, Lora, and Frank Ruhl Libre are bundled in `app/fonts/` from the
+[Google Fonts repository](https://github.com/google/fonts), under the SIL Open
+Font License included with each family. Builds do not fetch fonts from Google.
+
 ```bash
 npm run build
 ```

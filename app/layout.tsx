@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { Frank_Ruhl_Libre, Inter, Lora } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import { getNavStructure } from "@/lib/content";
@@ -8,9 +7,9 @@ import Sidebar from "@/components/Sidebar";
 import TopControls from "@/components/TopControls";
 import { AuthProvider } from "@/components/AuthProvider";
 
-const fontHebrew = Frank_Ruhl_Libre({
-  subsets: ["hebrew", "latin"],
-  weight: ["400", "500", "700"],
+const fontHebrew = localFont({
+  src: "./fonts/frank-ruhl-libre/FrankRuhlLibre.ttf",
+  weight: "300 900",
   variable: "--font-hebrew",
   display: "swap",
 });
@@ -29,17 +28,18 @@ const fontHebrewText = localFont({
   display: "swap",
 });
 
-const fontBody = Lora({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
+const fontBody = localFont({
+  src: [
+    { path: "./fonts/lora/Lora.ttf", weight: "400 700", style: "normal" },
+    { path: "./fonts/lora/Lora-Italic.ttf", weight: "400 700", style: "italic" },
+  ],
   variable: "--font-body",
   display: "swap",
 });
 
-const fontUi = Inter({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500", "600"],
+const fontUi = localFont({
+  src: "./fonts/inter/Inter.ttf",
+  weight: "100 900",
   variable: "--font-ui",
   display: "swap",
 });
