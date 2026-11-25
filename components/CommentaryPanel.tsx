@@ -49,6 +49,7 @@ export default function CommentaryPanel({
 }) {
   const { isAdmin } = useAuth();
   const [editing, setEditing] = useState<string>();
+  const [editFocus, setEditFocus] = useState<"title" | "body">("body");
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; moved: boolean } | null>(null);
   const ignoreNextClickRef = useRef(false);
@@ -270,14 +271,28 @@ export default function CommentaryPanel({
                     ))}
                   </div>
                 )}
-                <div dangerouslySetInnerHTML={{ __html: c.html }} />
-                {isAdmin && (editing === c.id ? (
+                {isAdmin && editing === c.id ? (
                   <InlineEditor slug={parasha} kind="commentary" item={c.id}
+                    focus={editFocus}
                     onClose={() => setEditing(undefined)}
                     onSaved={() => window.dispatchEvent(new Event("content-edited"))} />
                 ) : (
-                  <button type="button" className="commentary-edit-trigger" onClick={() => setEditing(c.id)}>Szerkesztés</button>
-                ))}
+                  <>
+                    {isAdmin && <button type="button" className="screen-reader-only" onClick={() => {
+                      if (!editing) { setEditFocus("title"); setEditing(c.id); }
+                    }}>Kommentár szerkesztése: {titles[c.id] || c.id}</button>}
+                    <div className={isAdmin ? "editable-commentary" : undefined}
+                      title={isAdmin ? "Kattints a kommentár szerkesztéséhez" : undefined}
+                      onClick={(event) => {
+                        const target = event.target as HTMLElement;
+                        if (!isAdmin || editing || target.closest("a, button, input, textarea")
+                          || (window.getSelection() && !window.getSelection()?.isCollapsed)) return;
+                        setEditFocus(target.closest("h1, h2, h3, h4, h5, h6") ? "title" : "body");
+                        setEditing(c.id);
+                      }}
+                      dangerouslySetInnerHTML={{ __html: c.html }} />
+                  </>
+                )}
               </article>
             )) : <p className="panel-message">{showAll ? "Ehhez a hetiszakaszhoz még nincs kommentár." : "Ehhez a pászukhoz még nincs kommentár."}</p>}
       </div>

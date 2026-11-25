@@ -93,9 +93,10 @@ uploaded notes appear immediately and are stored on the server, not synced
 back to the local vault. Configuration and backup details:
 [api/README.md](api/README.md#admin-commentary-upload).
 
-Admins can also edit each Hungarian verse in place using the pencil next to
-its number, and edit a commentary's title and body separately in the
-**Kommentárok** tab. Both accept Markdown; verse text is limited to one line.
+Admins can also click a Hungarian verse to edit it in place, or click a
+commentary in the **Kommentárok** tab to edit its title and body. Both accept
+Markdown; verse text and commentary titles are limited to one line. Verse
+numbers and links retain their usual navigation behavior.
 The saved edits are visible immediately and survive builds and vault uploads,
 but are not written back to the local vault.
 

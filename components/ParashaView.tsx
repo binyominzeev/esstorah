@@ -137,7 +137,7 @@ export default function ParashaView({
       a.classList.toggle("has-ai", on);
       container.querySelectorAll(`.${cls}`).forEach((n) => n.classList.toggle("has-ai", on));
     });
-  }, [aiDone, rows, edits.verses, isAdmin]);
+  }, [aiDone, rows, edits.verses, isAdmin, editingVerse]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -148,7 +148,7 @@ export default function ParashaView({
       el.classList.toggle("has-commentary", hasCommentary);
       if (hasCommentary) el.title = "Ehhez a pászukhoz kommentár tartozik";
     });
-  }, [allCommentaries, rows, edits.verses, isAdmin]);
+  }, [allCommentaries, rows, edits.verses, isAdmin, editingVerse]);
 
   useEffect(() => {
     if (!activeInfo) return;
@@ -161,7 +161,7 @@ export default function ParashaView({
     anchor?.classList.add("active-verse");
     container.querySelector<HTMLElement>(`strong.vrs-ch${chapter}-vrs${verse}`)?.classList.add("active-verse");
     anchor?.closest("tr")?.classList.add("active-row");
-  }, [activeInfo, edits.verses, isAdmin]);
+  }, [activeInfo, edits.verses, isAdmin, editingVerse]);
 
   function goToChapter(chapter: number) {
     containerRef.current

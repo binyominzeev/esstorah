@@ -1,14 +1,52 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 
 type Value = { revision: string; markdown?: string; title?: string; body?: string; level?: number };
 
-export default function InlineEditor({ slug, kind, item, onClose, onSaved }: {
+function AutoTextarea({ value, onChange, label, disabled, focus, singleLine, className }: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  disabled: boolean;
+  focus: boolean;
+  singleLine?: boolean;
+  className?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  function resize() {
+    const textarea = ref.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight + textarea.offsetHeight - textarea.clientHeight}px`;
+  }
+
+  useLayoutEffect(resize, [value]);
+  useEffect(() => {
+    const parent = ref.current?.parentElement;
+    if (!parent) return;
+    let width = parent.getBoundingClientRect().width;
+    const observer = new ResizeObserver((entries) => {
+      const nextWidth = entries[0].contentRect.width;
+      if (nextWidth !== width) { width = nextWidth; resize(); }
+    });
+    observer.observe(parent);
+    window.addEventListener("resize", resize);
+    return () => { observer.disconnect(); window.removeEventListener("resize", resize); };
+  }, []);
+
+  return <textarea ref={ref} className={className} aria-label={label} rows={1} value={value}
+    disabled={disabled} autoFocus={focus} onChange={(event) => onChange(event.target.value)}
+    onKeyDown={(event) => { if (singleLine && event.key === "Enter") event.preventDefault(); }} />;
+}
+
+export default function InlineEditor({ slug, kind, item, focus = "body", onClose, onSaved }: {
   slug: string;
   kind: "verse" | "commentary";
   item: string;
+  focus?: "title" | "body";
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -46,26 +84,24 @@ export default function InlineEditor({ slug, kind, item, onClose, onSaved }: {
   }
 
   return (
-    <div className="inline-editor" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+    <div className={`inline-editor inline-editor-${kind}`} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
       {busy && <p role="status">Betöltés vagy mentés…</p>}
       {error && <p className="inline-editor-error" role="alert">{error}</p>}
       {value && (kind === "verse" ? (
-        <label>Magyar fordítás ({item}) – Markdown
-          <textarea value={value.markdown ?? ""} disabled={busy} onChange={(event) => setValue({ ...value, markdown: event.target.value })} />
-        </label>
+        <AutoTextarea label={`Magyar fordítás (${item}) – Markdown, egy sor`} value={value.markdown ?? ""}
+          disabled={busy} focus singleLine onChange={(markdown) => setValue({ ...value, markdown })} />
       ) : (
         <>
-          <label>Címsor – Markdown
-            <input value={value.title ?? ""} disabled={busy} onChange={(event) => setValue({ ...value, title: event.target.value })} />
-          </label>
-          <label>Tartalom – Markdown
-            <textarea value={value.body ?? ""} disabled={busy} onChange={(event) => setValue({ ...value, body: event.target.value })} />
-          </label>
+          <AutoTextarea className="inline-editor-title" label="Címsor – Markdown, egy sor" value={value.title ?? ""}
+            disabled={busy} focus={focus === "title"} singleLine onChange={(title) => setValue({ ...value, title })} />
+          <AutoTextarea label="Tartalom – Markdown" value={value.body ?? ""}
+            disabled={busy} focus={focus === "body"} onChange={(body) => setValue({ ...value, body })} />
         </>
       ))}
       <div className="inline-editor-actions">
         {value && <button type="button" disabled={busy} onClick={() => void save()}>Mentés</button>}
         <button type="button" disabled={busy} onClick={onClose}>Mégse</button>
+        {value && <span>Markdown{kind === "verse" ? " · egy sor" : ""}</span>}
       </div>
     </div>
   );
