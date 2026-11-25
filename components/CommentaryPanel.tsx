@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type { CommentaryEntry } from "@/lib/types";
 import QuestionMap from "./QuestionMap";
 import RashiText from "./RashiText";
+import InlineEditor from "./InlineEditor";
+import { useAuth } from "./AuthProvider";
 
 type PanelTab = "questions" | "commentaries" | "rashi";
 const tabs: { id: PanelTab; label: string }[] = [
@@ -45,6 +47,8 @@ export default function CommentaryPanel({
   selectedCommentary?: string;
   onSelectVerse: (chapter: number, verse: number) => void;
 }) {
+  const { isAdmin } = useAuth();
+  const [editing, setEditing] = useState<string>();
   const panelRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number; moved: boolean } | null>(null);
   const ignoreNextClickRef = useRef(false);
@@ -267,6 +271,13 @@ export default function CommentaryPanel({
                   </div>
                 )}
                 <div dangerouslySetInnerHTML={{ __html: c.html }} />
+                {isAdmin && (editing === c.id ? (
+                  <InlineEditor slug={parasha} kind="commentary" item={c.id}
+                    onClose={() => setEditing(undefined)}
+                    onSaved={() => window.dispatchEvent(new Event("content-edited"))} />
+                ) : (
+                  <button type="button" className="commentary-edit-trigger" onClick={() => setEditing(c.id)}>Szerkesztés</button>
+                ))}
               </article>
             )) : <p className="panel-message">{showAll ? "Ehhez a hetiszakaszhoz még nincs kommentár." : "Ehhez a pászukhoz még nincs kommentár."}</p>}
       </div>

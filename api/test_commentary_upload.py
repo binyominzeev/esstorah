@@ -152,6 +152,44 @@ class UploadTests(unittest.TestCase):
             self.assertEqual(live.status_code, 200, live.text)
             self.assertEqual(len(live.json()["commentaries"]), 1)
 
+    def test_inline_edits_are_admin_only_persistent_and_conflict_checked(self):
+        directory = self.parasha / "perusim"
+        directory.mkdir()
+        (directory / "note.md").write_text("---\ncss: value\n---\n\n# Régi cím\n\nRégi **szöveg**", encoding="utf-8")
+        verse = "/api/admin/content/Vajece/verse/29:1"
+        note = "/api/admin/content/Vajece/commentary/note"
+        self.assertEqual(self.client.get(verse).status_code, 401)
+        UserInfoClient.groups = ["users"]
+        self.assertEqual(self.client.get(note, headers=self.headers()).status_code, 403)
+        self.assertEqual(self.client.put(verse, headers=self.headers(), json={"revision": "a" * 64, "markdown": "x"}).status_code, 403)
+        UserInfoClient.groups = ["admins"]
+        old_verse = self.client.get(verse, headers=self.headers()).json()
+        self.assertEqual(old_verse["markdown"], "a")
+        old_note = self.client.get(note, headers=self.headers()).json()
+        self.assertEqual((old_note["title"], old_note["body"], old_note["level"]), ("Régi cím", "Régi **szöveg**", 1))
+        saved = self.client.put(verse, headers=self.headers(), json={**old_verse, "markdown": "**Új** [[note|jegyzet]]"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        saved_note = self.client.put(note, headers=self.headers(), json={**old_note, "title": "Új cím", "body": "Új tartalom"})
+        self.assertEqual(saved_note.status_code, 200, saved_note.text)
+        self.assertEqual(self.client.put(verse, headers=self.headers(), json={**old_verse, "markdown": "Elavult"}).status_code, 409)
+        live = self.client.get("/api/content-edits/Vajece").json()
+        self.assertEqual(live["verses"]["29:1"], "**Új** [[note|jegyzet]]")
+        self.assertEqual(live["commentaries"]["note"], {"title": "Új cím", "body": "Új tartalom", "level": 1})
+        self.assertEqual(self.client.get(verse, headers=self.headers()).json()["markdown"], "**Új** [[note|jegyzet]]")
+        self.assertIn("**1.** a **2.** b", (self.parasha / "HU.md").read_text(encoding="utf-8"))
+        self.assertIn("Régi cím", (directory / "note.md").read_text(encoding="utf-8"))
+
+    def test_inline_edit_rejects_invalid_input_and_symlinks(self):
+        verse = "/api/admin/content/Vajece/verse/29:1"
+        old = self.client.get(verse, headers=self.headers()).json()
+        for text in ("", "sor\nmásik", "a **2.** b", "a\0b"):
+            self.assertEqual(self.client.put(verse, headers=self.headers(), json={**old, "markdown": text}).status_code, 422)
+        self.assertEqual(self.client.get("/api/admin/content/Vajece/verse/29:99", headers=self.headers()).status_code, 404)
+        directory = self.parasha / "perusim"
+        directory.mkdir()
+        (directory / "link.md").symlink_to(self.parasha / "HU.md")
+        self.assertEqual(self.client.get("/api/admin/content/Vajece/commentary/link", headers=self.headers()).status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

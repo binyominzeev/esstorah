@@ -93,6 +93,12 @@ uploaded notes appear immediately and are stored on the server, not synced
 back to the local vault. Configuration and backup details:
 [api/README.md](api/README.md#admin-commentary-upload).
 
+Admins can also edit each Hungarian verse in place using the pencil next to
+its number, and edit a commentary's title and body separately in the
+**Kommentárok** tab. Both accept Markdown; verse text is limited to one line.
+The saved edits are visible immediately and survive builds and vault uploads,
+but are not written back to the local vault.
+
 ## Build
 
 Inter, Lora, and Frank Ruhl Libre are bundled in `app/fonts/` from the

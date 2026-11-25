@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CommentaryEntry, RowData } from "@/lib/types";
-import { safeMarkdownToHtml } from "@/lib/safeMarkdown";
+import { safeEditedCommentaryToHtml, safeMarkdownToHtml } from "@/lib/safeMarkdown";
 import BilingualTable from "./BilingualTable";
 import CommentaryPanel from "./CommentaryPanel";
+import { useAuth } from "./AuthProvider";
+
+type LiveEdits = {
+  verses: Record<string, string>;
+  commentaries: Record<string, { title: string; body: string; level: number }>;
+};
 
 interface ActiveInfo {
   chapter: number;
@@ -39,6 +45,7 @@ export default function ParashaView({
   rows: RowData[];
   commentaries: CommentaryEntry[];
 }) {
+  const { isAdmin } = useAuth();
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeInfo, setActiveInfo] = useState<ActiveInfo | undefined>();
   const [currentChapter, setCurrentChapter] = useState<number | null>(null);
@@ -48,9 +55,16 @@ export default function ParashaView({
   const [selectedCommentary, setSelectedCommentary] = useState<string>();
   const [liveCommentaries, setLiveCommentaries] = useState<CommentaryEntry[]>([]);
   const [liveError, setLiveError] = useState("");
+  const [editError, setEditError] = useState("");
+  const [edits, setEdits] = useState<LiveEdits>({ verses: {}, commentaries: {} });
+  const [editingVerse, setEditingVerse] = useState<string>();
   const allCommentaries = useMemo(
-    () => [...commentaries.filter((c) => !liveCommentaries.some((live) => live.id === c.id)), ...liveCommentaries],
-    [commentaries, liveCommentaries],
+    () => [...commentaries.filter((c) => !liveCommentaries.some((live) => live.id === c.id)), ...liveCommentaries]
+      .map((c) => {
+        const edit = edits.commentaries[c.id];
+        return edit ? { ...c, html: safeEditedCommentaryToHtml(`${"#".repeat(edit.level)} ${edit.title}\n\n${edit.body}`) } : c;
+      }),
+    [commentaries, liveCommentaries, edits.commentaries],
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -75,6 +89,26 @@ export default function ParashaView({
     void load();
     window.addEventListener("commentaries-uploaded", load);
     return () => { active = false; window.removeEventListener("commentaries-uploaded", load); };
+  }, [slug]);
+
+  useEffect(() => {
+    let active = true;
+    let generation = 0;
+    async function load() {
+      const current = ++generation;
+      try {
+        const api = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
+        const response = await fetch(`${api}/content-edits/${encodeURIComponent(slug)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data: LiveEdits = await response.json();
+        if (active && current === generation) { setEdits(data); setEditError(""); }
+      } catch {
+        if (active && current === generation) setEditError("A szerkesztett tartalom nem tölthető be.");
+      }
+    }
+    void load();
+    window.addEventListener("content-edited", load);
+    return () => { active = false; window.removeEventListener("content-edited", load); };
   }, [slug]);
 
   // Verses that already have an AI summary: loaded once, then extended whenever a map finishes.
@@ -103,7 +137,7 @@ export default function ParashaView({
       a.classList.toggle("has-ai", on);
       container.querySelectorAll(`.${cls}`).forEach((n) => n.classList.toggle("has-ai", on));
     });
-  }, [aiDone, rows]);
+  }, [aiDone, rows, edits.verses, isAdmin]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -114,7 +148,20 @@ export default function ParashaView({
       el.classList.toggle("has-commentary", hasCommentary);
       if (hasCommentary) el.title = "Ehhez a pászukhoz kommentár tartozik";
     });
-  }, [commentaries, liveCommentaries, rows]);
+  }, [allCommentaries, rows, edits.verses, isAdmin]);
+
+  useEffect(() => {
+    if (!activeInfo) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const { chapter, verse } = activeInfo;
+    container.querySelectorAll(".active-verse").forEach((el) => el.classList.remove("active-verse"));
+    container.querySelectorAll("tr.active-row").forEach((el) => el.classList.remove("active-row"));
+    const anchor = container.querySelector<HTMLElement>(`#ch${chapter}-vrs${verse}`);
+    anchor?.classList.add("active-verse");
+    container.querySelector<HTMLElement>(`strong.vrs-ch${chapter}-vrs${verse}`)?.classList.add("active-verse");
+    anchor?.closest("tr")?.classList.add("active-row");
+  }, [activeInfo, edits.verses, isAdmin]);
 
   function goToChapter(chapter: number) {
     containerRef.current
@@ -322,7 +369,10 @@ export default function ParashaView({
         </nav>
       )}
       <div ref={contentRef} className="content reader-content" role="region" aria-label="Tóraszöveg" tabIndex={0}>
-        <BilingualTable rows={rows} />
+        {editError && <p className="qmap-error" role="alert">{editError}</p>}
+        <BilingualTable rows={rows} slug={slug} isAdmin={isAdmin} edits={edits.verses} editing={editingVerse}
+          onEdit={setEditingVerse} onClose={() => setEditingVerse(undefined)}
+          onSaved={() => window.dispatchEvent(new Event("content-edited"))} />
       </div>
       <CommentaryPanel
         parasha={slug}

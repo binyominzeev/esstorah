@@ -114,3 +114,17 @@ This is server-side storage, not two-way vault sync: back up the server's
 content directory. Existing FTP sync does not download the web uploads, and
 reserves `perusim/web-*.md` to avoid overwriting them from a local vault.
 Rendered web-upload Markdown does not execute raw HTML or unsafe links.
+
+### Inline content editing
+
+The same verified `admins` group may edit individual Hungarian verses and
+commentary titles and bodies. `GET/PUT /api/admin/content/{slug}/{kind}/{item}`
+requires admin authentication; saves reject stale revisions. The public
+`GET /api/content-edits/{slug}` supplies the saved overrides immediately.
+Overrides are stored in `CONTENT_PATH/.mytorah-edits.sqlite3`, independently
+of the source Markdown. Back up this database together with the content
+directory (including hidden files). FTP sync and static builds do not remove
+or update these overrides; an override continues to take precedence if its
+source is later changed or a web commentary is re-uploaded. Edits are not
+synced back to the local vault. If the live API is unavailable, the page
+reports the error and displays its static build instead.
