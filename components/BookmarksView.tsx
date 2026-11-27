@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { frameStyles } from "@/lib/frameStyles";
+import SourceDialog from "./SourceDialog";
 
 const API = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -10,6 +11,7 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
   const { ready, authenticated, bookmarks, login, toggleBookmark, error: authError } = useAuth();
   const [selected, setSelected] = useState("");
   const [error, setError] = useState("");
+  const [source, setSource] = useState<{ mapRef: string; ref: string } | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const previewFrames = useRef(new Map<number, HTMLIFrameElement>());
 
@@ -24,6 +26,7 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
   const visibleCount = selected ? bookmarks.filter((item) => item.parasha === selected).length : bookmarks.length;
 
   const sendPreviewState = useCallback((frame: HTMLIFrameElement, parasha: string, ref: string) => {
+    frame.contentWindow?.postMessage({ type: "esstorah-source-dialog-ready" }, "*");
     frame.contentWindow?.postMessage({
       type: "esstorah-bookmark-state",
       authenticated,
@@ -40,10 +43,15 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      if (event.origin !== "null" || event.data?.type !== "esstorah-bookmark-toggle") return;
+      if (event.origin !== "null") return;
       for (const [id, frame] of previewFrames.current) {
         if (event.source !== frame.contentWindow) continue;
         const item = bookmarks.find((bookmark) => bookmark.id === id);
+        if (item && event.data?.type === "esstorah-source-open" && typeof event.data.ref === "string" && event.data.ref.trim()) {
+          setSource({ mapRef: item.ref, ref: event.data.ref });
+          return;
+        }
+        if (event.data?.type !== "esstorah-bookmark-toggle") return;
         const { kind, text } = event.data;
         if (!item || (kind !== "question" && kind !== "answer") || typeof text !== "string" || !text.trim()) return;
         if (!authenticated) {
@@ -71,6 +79,7 @@ export default function BookmarksView({ parashot }: { parashot: { slug: string; 
 
   return (
     <main className="content bookmarks">
+      <SourceDialog source={source} onClose={() => setSource(null)} />
       <div className="bookmarks-inner">
         <header className="bookmarks-header">
           <div>

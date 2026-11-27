@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { frameStyles } from "@/lib/frameStyles";
+import SourceDialog from "./SourceDialog";
 
 const API = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -21,6 +22,7 @@ export default function QuestionMap({
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [bookmarkError, setBookmarkError] = useState("");
+  const [source, setSource] = useState<{ mapRef: string; ref: string } | null>(null);
   const { authenticated, bookmarks, toggleBookmark } = useAuth();
   const frame = useRef<HTMLIFrameElement>(null);
   const frameReady = useRef(false);
@@ -82,6 +84,7 @@ export default function QuestionMap({
   const done = status?.state === "done";
   const htmlUrl = `${API}/map/${mapRef}/html`;
   const sendBookmarkState = useCallback(() => {
+    frame.current?.contentWindow?.postMessage({ type: "esstorah-source-dialog-ready" }, "*");
     frame.current?.contentWindow?.postMessage({
       type: "esstorah-bookmark-state",
       authenticated,
@@ -112,7 +115,9 @@ export default function QuestionMap({
     sendBookmarkState();
     function onMessage(event: MessageEvent) {
       if (event.origin !== "null" || event.source !== frame.current?.contentWindow) return;
-      if (event.data?.type === "esstorah-bookmark-ready") {
+      if (event.data?.type === "esstorah-source-open" && typeof event.data.ref === "string" && event.data.ref.trim()) {
+        setSource({ mapRef, ref: event.data.ref });
+      } else if (event.data?.type === "esstorah-bookmark-ready") {
         frameReady.current = true;
         sendBookmarkState();
         sendFonts();
@@ -134,6 +139,7 @@ export default function QuestionMap({
 
   return (
     <div className="qmap">
+      <SourceDialog source={source} onClose={() => setSource(null)} />
       {status && !done && (
         <button type="button" className="qmap-btn" onClick={generate} disabled={busy}>
           AI kérdés-válasz kommentár

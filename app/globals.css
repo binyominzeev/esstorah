@@ -956,6 +956,11 @@ tr.verse-row{ transition:background .2s ease; }
 .qmap-error{ font-size:13px; color:#d98c8c; margin:0; }
 .qmap-open{ font-size:12px; color:var(--gold-dim); text-decoration:underline; align-self:flex-end; }
 .qmap-frame{ width:100%; height:calc(100vh - 200px); min-height:360px; border:1px solid var(--ink-line); border-radius:8px; }
+.source-dialog{ position:fixed; inset:0; width:100%; max-width:none; height:100%; max-height:none; margin:0; padding:0; border:0; background:#14161d; color:#e8e2d2; }
+.source-dialog::backdrop{ background:rgba(0,0,0,.7); }
+.source-dialog-header{ display:flex; justify-content:space-between; padding:8px 16px; }
+.source-dialog-header button{ color:#e0bc63; background:transparent; border:1px solid #8a7038; border-radius:7px; padding:7px 12px; cursor:pointer; font:inherit; }
+.source-dialog-frame{ display:block; width:100%; height:calc(100% - 55px); border:0; }
 body.panels-collapsed .qmap{ display:none; }
 
 /* verses that already have an AI summary (light honey gold) */

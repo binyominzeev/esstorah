@@ -16,12 +16,16 @@ Endpoints: `GET/POST /api/map/Genesis.17.17` (status/start), `GET /api/map/Genes
 Env: `MAX_PARALLEL_JOBS` (2), `MAX_NEW_PER_DAY` (200), `MEFORSHIM_OUT`, `ALLOWED_ORIGINS` (dev CORS).
 The frontend uses `/api` (nginx proxy, see `deploy/`); override with `NEXT_PUBLIC_API_BASE`.
 
-The question-map source links open a separate reader. It retrieves the exact linked
+The question-map source links open a full-screen reader that closes back to the
+unchanged map. A directly opened map uses the reader's back button instead.
+It retrieves the exact linked
 Hebrew/Aramaic source from Sefaria and translates it into Hungarian on the server
 using the existing LLM configuration in `meforshim/.env`. The translation is
 identified as AI-generated. Hebrew text and navigation data are cached under
 `MEFORSHIM_OUT` per map and reference; translations are cached by reference, source
-text and model. Reopening a cached source does not require Sefaria or the model.
+text, model and translation format. Long translations are divided into aligned
+Hebrew/Hungarian paragraph pairs; short texts remain a single pair. Older
+translation caches are regenerated in the aligned format. Reopening a cached source does not require Sefaria or the model.
 The reader's previous/next buttons follow Sefaria's neighboring commentary segments
 and sections. To refresh a saved source, remove its entry from that map's
 `source-texts` directory; a changed text will receive a new translation.

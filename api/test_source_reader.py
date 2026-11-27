@@ -45,28 +45,31 @@ class SourceReaderTests(unittest.TestCase):
         return {"ref": ref or self.ref, "text": text, "prev": previous, "next": following}
 
     def test_only_linked_sources_are_available_and_page_is_safe(self):
-        page = self.client.get(self.url, params={"ref": self.ref})
+        with patch.dict("os.environ", {"ALLOWED_ORIGINS": "http://localhost:3000"}):
+            page = self.client.get(self.url, params={"ref": self.ref})
         self.assertEqual(page.status_code, 200)
         self.assertIn("AI által készített fordítás", page.text)
+        csp = page.headers["content-security-policy"]
+        self.assertIn("frame-ancestors 'self' http://localhost:3000", csp)
         self.assertEqual(self.client.get(self.url, params={"ref": "Not linked"}).status_code, 404)
         self.assertEqual(self.client.get(self.url, params={"ref": "Other 1:1"}).status_code, 200)
         self.assertEqual(self.client.get("/api/map/invalid/source", params={"ref": self.ref}).status_code, 404)
 
     def test_source_and_translation_are_cached_and_translation_tracks_source_text(self):
-        result = SimpleNamespace(text='{"translation":"Kezdetben."}', error=None, truncated=False)
+        result = SimpleNamespace(text='{"paragraphs":[{"translation":"Kezdetben."}]}', error=None, truncated=False)
         with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source())) as fetch, \
                 patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=result)) as complete:
             for _ in range(2):
                 self.assertEqual(self.client.get(self.url + "/text", params={"ref": self.ref}).json()["text"], "בראשית")
                 response = self.client.post(self.url + "/translation", params={"ref": self.ref},
                                             headers=self.headers())
-                self.assertEqual(response.json(), {"translation": "Kezdetben."})
+                self.assertEqual(response.json(), {"paragraphs": [{"hebrew": "בראשית", "translation": "Kezdetben."}]})
             self.assertEqual(fetch.await_count, 1)
             source_file = next(self.out.glob("**/source-texts/*.json"))
             source_file.write_text(json.dumps(self.source("חדש")), encoding="utf-8")
             response = self.client.post(self.url + "/translation", params={"ref": self.ref},
                                         headers=self.headers("חדש"))
-            self.assertEqual(response.json(), {"translation": "Kezdetben."})
+            self.assertEqual(response.json(), {"paragraphs": [{"hebrew": "חדש", "translation": "Kezdetben."}]})
             self.assertEqual(complete.await_count, 2)
             self.assertEqual(complete.await_args_list[0].args[2], "בראשית")
 
@@ -74,7 +77,7 @@ class SourceReaderTests(unittest.TestCase):
         self.assertEqual(self.client.post(self.url + "/translation", params={"ref": self.ref}).status_code, 403)
         with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source())), \
                 patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=SimpleNamespace(
-                    text='{"translation":"fél"}', error=None, truncated=True))):
+                    text='{"paragraphs":[{"translation":"fél"}]}', error=None, truncated=True))):
             response = self.client.post(self.url + "/translation", params={"ref": self.ref},
                                         headers=self.headers())
             self.assertEqual(response.status_code, 502)
@@ -124,7 +127,7 @@ class SourceReaderTests(unittest.TestCase):
         async def run():
             async def complete(*args, **kwargs):
                 await asyncio.sleep(0.02)
-                return SimpleNamespace(text='{"translation":"Kezdetben"}', error=None, truncated=False)
+                return SimpleNamespace(text='{"paragraphs":[{"translation":"Kezdetben"}]}', error=None, truncated=False)
 
             with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source())), \
                     patch.object(source_reader.llm, "complete", new=AsyncMock(side_effect=complete)) as model:
@@ -147,13 +150,13 @@ class SourceReaderTests(unittest.TestCase):
         }
         with patch.object(source_reader, "fetch_text", new=AsyncMock(side_effect=lambda ref: sources[ref])) as fetch, \
                 patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=SimpleNamespace(
-                    text='{"translation":"Folytatás"}', error=None, truncated=False))):
+                    text='{"paragraphs":[{"translation":"Folytatás"}]}', error=None, truncated=False))):
             params = {"ref": self.ref, "path": "n"}
             current = self.client.get(self.url + "/text", params=params).json()
             self.assertEqual(current["ref"], following)
             self.assertEqual(current["back_ref"], self.ref)
             response = self.client.post(self.url + "/translation", params=params, headers=self.headers("המשך"))
-            self.assertEqual(response.json()["translation"], "Folytatás")
+            self.assertEqual(response.json()["paragraphs"][0]["translation"], "Folytatás")
             self.assertEqual(self.client.get(self.url + "/text", params={**params, "path": "np"}).json()["ref"], self.ref)
             self.assertEqual(fetch.await_count, 2)
             self.assertEqual(self.client.get(self.url + "/text", params={"ref": following}).status_code, 404)
@@ -175,9 +178,47 @@ class SourceReaderTests(unittest.TestCase):
         with patch.object(server, "load_html", return_value="<html><head></head><body></body></html>"):
             client = TestClient(server.app)
             page = client.get("/api/map/Genesis.1.1/html")
-            self.assertIn("url.searchParams.set('ref', link.title)", page.text)
+            self.assertIn("esstorah-source-open", page.text)
             self.assertIn("sandbox", page.headers["content-security-policy"])
             client.close()
+
+    def test_aligned_paragraphs_preserve_source_and_cached_result(self):
+        first = "בראשית דבר ראשון. " * 20 + "\n\n"
+        source = first + "המשך דבר שני וסיום."
+        result = SimpleNamespace(text=json.dumps({"paragraphs": [
+            {"translation": "Első bekezdés."},
+            {"start": "המשך דבר שני", "translation": "Második bekezdés."},
+        ]}), error=None, truncated=False)
+        with patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source(source))), \
+                patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=result)) as complete:
+            for _ in range(2):
+                response = self.client.post(self.url + "/translation", params={"ref": self.ref},
+                                            headers=self.headers(source))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["paragraphs"], [
+                    {"hebrew": first, "translation": "Első bekezdés."},
+                    {"hebrew": "המשך דבר שני וסיום.", "translation": "Második bekezdés."},
+                ])
+            self.assertEqual(complete.await_count, 1)
+
+    def test_invalid_or_ambiguous_alignment_is_not_cached(self):
+        source = "א" * 300 + " ראשון שני ראשון"
+        for anchor in ("חסר", "ראשון", ""):
+            result = SimpleNamespace(text=json.dumps({"paragraphs": [
+                {"translation": "Első"}, {"start": anchor, "translation": "Második"},
+            ]}), error=None, truncated=False)
+            with self.subTest(anchor=anchor), \
+                    patch.object(source_reader, "fetch_text", new=AsyncMock(return_value=self.source(source))), \
+                    patch.object(source_reader.llm, "complete", new=AsyncMock(return_value=result)):
+                response = self.client.post(self.url + "/translation", params={"ref": self.ref},
+                                            headers=self.headers(source))
+                self.assertEqual(response.status_code, 502)
+                self.assertFalse(list(self.out.glob("**/source-translations/*.json")))
+
+    def test_short_source_stays_in_one_paragraph(self):
+        self.assertEqual(source_reader.aligned_paragraphs("ראשון שני", [
+            {"translation": "Első."}, {"start": "שני", "translation": "Második."},
+        ]), [{"hebrew": "ראשון שני", "translation": "Első. Második."}])
 
 
 if __name__ == "__main__":
