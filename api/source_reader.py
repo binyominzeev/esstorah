@@ -338,7 +338,7 @@ def router(out: Path, parse) -> APIRouter:
             if parsed.scheme in ("http", "https") and parsed.netloc and not parsed.path and not parsed.query and not parsed.fragment:
                 origins.append(f"{parsed.scheme}://{parsed.netloc}")
         return HTMLResponse(PAGE, headers={
-            "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'self' " + " ".join(origins),
+            "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors " + " ".join(["'self'", *origins]),
             "X-Content-Type-Options": "nosniff",
         })
 

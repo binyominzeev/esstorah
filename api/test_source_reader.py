@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import h11
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -54,6 +55,19 @@ class SourceReaderTests(unittest.TestCase):
         self.assertEqual(self.client.get(self.url, params={"ref": "Not linked"}).status_code, 404)
         self.assertEqual(self.client.get(self.url, params={"ref": "Other 1:1"}).status_code, 200)
         self.assertEqual(self.client.get("/api/map/invalid/source", params={"ref": self.ref}).status_code, 404)
+
+    def test_reader_csp_is_valid_http_with_or_without_allowed_origins(self):
+        for allowed in ("", "http://localhost:3000,http://127.0.0.1:3000"):
+            with self.subTest(allowed=allowed), patch.dict("os.environ", {"ALLOWED_ORIGINS": allowed}):
+                page = self.client.get(self.url, params={"ref": self.ref})
+                self.assertEqual(page.status_code, 200)
+                csp = page.headers["content-security-policy"]
+                self.assertEqual(csp, csp.strip())
+                h11.Response(status_code=200, headers=[("content-security-policy", csp)])
+                if allowed:
+                    self.assertIn("frame-ancestors 'self' http://localhost:3000 http://127.0.0.1:3000", csp)
+                else:
+                    self.assertTrue(csp.endswith("frame-ancestors 'self'"))
 
     def test_source_and_translation_are_cached_and_translation_tracks_source_text(self):
         result = SimpleNamespace(text='{"paragraphs":[{"translation":"Kezdetben."}]}', error=None, truncated=False)
